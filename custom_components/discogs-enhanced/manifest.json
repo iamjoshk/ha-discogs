@@ -1,6 +1,6 @@
 {
   "domain": "discogs_enhanced",
-  "name": "Discogs Custom",
+  "name": "Discogs Enhanced",
   "version": "1.0.0",
   "codeowners": ["@andreasc1"],
   "documentation": "https://github.com/andreasc1/homeassistant-discogs-enhanced#readme",
