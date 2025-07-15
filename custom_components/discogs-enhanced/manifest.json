@@ -1,5 +1,5 @@
 {
-  "domain": "discogs-enhanced",
+  "domain": "discogs_enhanced",
   "name": "Discogs Custom",
   "version": "1.0.0",
   "codeowners": ["@andreasc1"],
