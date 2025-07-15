@@ -1,1 +1,5 @@
-
+{
+  "name": "Discogs Enhanced Integration",
+  "render_readme": true,
+  "zip_release": true,
+}
