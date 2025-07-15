@@ -6,7 +6,7 @@ from homeassistant.helpers.typing import ConfigType
 
 _LOGGER = logging.getLogger(__name__)
 
-DOMAIN = "discogs_custom"  # Make sure this matches your folder name and manifest.json domain
+DOMAIN = "discogs_enhanced"  # Make sure this matches your folder name and manifest.json domain
 
 def setup(hass: HomeAssistant, config: ConfigType) -> bool:
     """Set up the Discogs component."""
