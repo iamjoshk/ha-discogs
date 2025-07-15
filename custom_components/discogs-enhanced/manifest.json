@@ -1,8 +1,10 @@
 {
   "domain": "discogs-enhanced",
-  "name": "Discogs",
-  "codeowners": ["@thibmaek"],
-  "documentation": "https://www.home-assistant.io/integrations/discogs",
+  "name": "Discogs Custom",
+  "version": "1.0.0",
+  "codeowners": ["@andreasc1"],
+  "documentation": "https://github.com/andreasc1/homeassistant-discogs-enhanced#readme", <-- Update this
+  "issue_tracker": "https://github.com/andreasc1/homeassistant-discogs-enhanced/issues", <-- Update this
   "iot_class": "cloud_polling",
   "loggers": ["discogs_client"],
   "quality_scale": "legacy",
