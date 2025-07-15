@@ -5,6 +5,7 @@ from __future__ import annotations
 from datetime import timedelta
 import logging
 import random
+import re # Import the re module for regex operations
 
 import discogs_client
 import voluptuous as vol
@@ -115,26 +116,46 @@ def setup_platform(
         # Assuming all values will use the same currency symbol.
         # Fallback to "$" if extraction fails or string is empty/unexpected.
         currency_symbol = "$"
-        if collection_value and collection_value.get("minimum"):
-            # Find the first non-digit, non-decimal character
-            for char in collection_value["minimum"]:
-                if not char.isdigit() and char != ".":
-                    currency_symbol = char
-                    break
+        # Use hasattr to check if the attribute exists before accessing, and ensure it's not None/empty
+        if hasattr(collection_value, 'minimum') and collection_value.minimum:
+            # Find the first non-digit, non-decimal character using regex
+            # This is more robust than iterating char by char
+            match = re.search(r'[^0-9.]', str(collection_value.minimum))
+            if match:
+                currency_symbol = match.group(0)
+            else:
+                _LOGGER.warning("Could not determine currency symbol from Discogs collection value.")
+
 
         discogs_data = {
             "user": _discogs_client.identity().name,
             "folders": _discogs_client.identity().collection_folders,
             "collection_count": _discogs_client.identity().num_collection,
             "wantlist_count": _discogs_client.identity().num_wantlist,
-            "collection_value_min": collection_value["minimum"],
-            "collection_value_median": collection_value["median"],
-            "collection_value_max": collection_value["maximum"],
+            # Access values as attributes (collection_value.minimum, etc.)
+            "collection_value_min": collection_value.minimum,
+            "collection_value_median": collection_value.median,
+            "collection_value_max": collection_value.maximum,
             "currency_symbol": currency_symbol,  # Store the detected currency symbol
         }
     except discogs_client.exceptions.HTTPError as err:
         _LOGGER.error("API token is not valid or Discogs API error: %s", err)
         return
+    except AttributeError as err: # Catch AttributeError specifically for missing .minimum, .median, .maximum
+        _LOGGER.error("Failed to fetch Discogs collection values. Ensure your Discogs account has collection items with values. Error: %s", err)
+        # Populate with default/empty values to allow other sensors to work
+        discogs_data = {
+            "user": _discogs_client.identity().name if hasattr(_discogs_client.identity(), 'name') else "Unknown",
+            "folders": _discogs_client.identity().collection_folders if hasattr(_discogs_client.identity(), 'collection_folders') else [],
+            "collection_count": _discogs_client.identity().num_collection if hasattr(_discogs_client.identity(), 'num_collection') else 0,
+            "wantlist_count": _discogs_client.identity().num_wantlist if hasattr(_discogs_client.identity(), 'num_wantlist') else 0,
+            "collection_value_min": "0.00", # Provide a default string value
+            "collection_value_median": "0.00",
+            "collection_value_max": "0.00",
+            "currency_symbol": "$",
+        }
+        _LOGGER.warning("Discogs collection value sensors might be unavailable due to missing data.")
+
 
     monitored_conditions = config[CONF_MONITORED_CONDITIONS]
     entities = [
@@ -179,13 +200,13 @@ class DiscogsSensor(SensorEntity):
 
         if self.entity_description.key == SENSOR_RANDOM_RECORD_TYPE and self._attrs:
             return {
-                "cat_no": self._attrs["labels"][0]["catno"],
-                "cover_image": self._attrs["cover_image"],
+                "cat_no": self._attrs.get("labels", [{}])[0].get("catno"), # Use .get with default list to prevent IndexError
+                "cover_image": self._attrs.get("cover_image"),
                 "format": (
-                    f"{self._attrs['formats'][0]['name']} ({self._attrs['formats'][0]['descriptions'][0]})"
-                ),
-                "label": self._attrs["labels"][0]["name"],
-                "released": self._attrs["year"],
+                    f"{self._attrs.get('formats', [{}])[0].get('name')} ({self._attrs.get('formats', [{}])[0].get('descriptions', [''])[0]})"
+                ) if self._attrs.get('formats') else None, # More robust format handling
+                "label": self._attrs.get("labels", [{}])[0].get("name"), # Use .get with default list to prevent IndexError
+                "released": self._attrs.get("year"),
                 ATTR_IDENTITY: self._discogs_data["user"],
             }
         return {
@@ -194,16 +215,18 @@ class DiscogsSensor(SensorEntity):
 
     def get_random_record(self) -> str | None:
         """Get a random record suggestion from the user's collection."""
-        collection = self._discogs_data["folders"][0]
-        if collection.count > 0:
+        # Ensure folders exist and has at least one item before accessing [0]
+        if self._discogs_data["folders"] and self._discogs_data["folders"][0].count > 0:
+            collection = self._discogs_data["folders"][0]
             random_index = random.randrange(collection.count)
             random_record = collection.releases[random_index].release
 
             self._attrs = random_record.data
-            return (
-                f"{random_record.data['artists'][0]['name']} -"
-                f" {random_record.data['title']}"
-            )
+            
+            artist_name = random_record.data.get('artists', [{}])[0].get('name') if random_record.data.get('artists') else 'Unknown Artist'
+            title = random_record.data.get('title', 'Unknown Title')
+
+            return f"{artist_name} - {title}"
         return None
 
     def update(self) -> None:
@@ -213,42 +236,38 @@ class DiscogsSensor(SensorEntity):
         elif self.entity_description.key == SENSOR_WANTLIST_TYPE:
             self._attr_native_value = self._discogs_data["wantlist_count"]
         elif self.entity_description.key == SENSOR_COLLECTION_VALUE_MIN_TYPE:
-            # Remove the detected currency symbol and convert to float
             value_str = self._discogs_data["collection_value_min"]
-            # Find the index of the first digit to split the symbol from the number
-            first_digit_index = next(
-                (
-                    i
-                    for i, char in enumerate(value_str)
-                    if char.isdigit() or char == "."
-                ),
-                0,
-            )
-            numeric_value_str = value_str[first_digit_index:]
-            self._attr_native_value = float(numeric_value_str)
+            # Ensure value_str is a string before regex operations
+            if isinstance(value_str, str):
+                numeric_value_str = re.sub(r'[^0-9.]', '', value_str) # Remove any non-numeric/non-decimal chars
+                try:
+                    self._attr_native_value = float(numeric_value_str)
+                except ValueError:
+                    _LOGGER.error("Could not convert '%s' to float for min collection value.", numeric_value_str)
+                    self._attr_native_value = None # Set to None or 0 if conversion fails
+            else:
+                self._attr_native_value = None # Or 0
         elif self.entity_description.key == SENSOR_COLLECTION_VALUE_MEDIAN_TYPE:
             value_str = self._discogs_data["collection_value_median"]
-            first_digit_index = next(
-                (
-                    i
-                    for i, char in enumerate(value_str)
-                    if char.isdigit() or char == "."
-                ),
-                0,
-            )
-            numeric_value_str = value_str[first_digit_index:]
-            self._attr_native_value = float(numeric_value_str)
+            if isinstance(value_str, str):
+                numeric_value_str = re.sub(r'[^0-9.]', '', value_str)
+                try:
+                    self._attr_native_value = float(numeric_value_str)
+                except ValueError:
+                    _LOGGER.error("Could not convert '%s' to float for median collection value.", numeric_value_str)
+                    self._attr_native_value = None
+            else:
+                self._attr_native_value = None
         elif self.entity_description.key == SENSOR_COLLECTION_VALUE_MAX_TYPE:
             value_str = self._discogs_data["collection_value_max"]
-            first_digit_index = next(
-                (
-                    i
-                    for i, char in enumerate(value_str)
-                    if char.isdigit() or char == "."
-                ),
-                0,
-            )
-            numeric_value_str = value_str[first_digit_index:]
-            self._attr_native_value = float(numeric_value_str)
+            if isinstance(value_str, str):
+                numeric_value_str = re.sub(r'[^0-9.]', '', value_str)
+                try:
+                    self._attr_native_value = float(numeric_value_str)
+                except ValueError:
+                    _LOGGER.error("Could not convert '%s' to float for max collection value.", numeric_value_str)
+                    self._attr_native_value = None
+            else:
+                self._attr_native_value = None
         else:
             self._attr_native_value = self.get_random_record()
