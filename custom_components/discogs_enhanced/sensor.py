@@ -199,13 +199,33 @@ class DiscogsSensor(SensorEntity):
             return None
 
         if self.entity_description.key == SENSOR_RANDOM_RECORD_TYPE and self._attrs:
+            # Safely get the first format dictionary
+            first_format = self._attrs.get('formats', [{}])[0]
+            format_name = first_format.get('name')
+            
+            # Safely get descriptions as a list. If 'descriptions' key is missing, defaults to an empty list.
+            # If 'descriptions' exists but its value is not a list, this will still return an empty list.
+            descriptions = first_format.get('descriptions', []) 
+
+            # Build the format string more robustly
+            format_str = None
+            if format_name:
+                if descriptions: # Check if the descriptions list is not empty
+                    # Join all descriptions if multiple exist
+                    format_str = f"{format_name} ({', '.join(descriptions)})"
+                else:
+                    format_str = format_name # Just use the format name if no descriptions
+
+            # Safely get the first label dictionary
+            first_label = self._attrs.get('labels', [{}])[0]
+            label_name = first_label.get('name')
+            cat_no = first_label.get('catno')
+
             return {
-                "cat_no": self._attrs.get("labels", [{}])[0].get("catno"), # Use .get with default list to prevent IndexError
+                "cat_no": cat_no,
                 "cover_image": self._attrs.get("cover_image"),
-                "format": (
-                    f"{self._attrs.get('formats', [{}])[0].get('name')} ({self._attrs.get('formats', [{}])[0].get('descriptions', [''])[0]})"
-                ) if self._attrs.get('formats') else None, # More robust format handling
-                "label": self._attrs.get("labels", [{}])[0].get("name"), # Use .get with default list to prevent IndexError
+                "format": format_str, # Use the robustly built format string
+                "label": label_name,
                 "released": self._attrs.get("year"),
                 ATTR_IDENTITY: self._discogs_data["user"],
             }
