@@ -11,7 +11,7 @@ DOMAIN = "discogs_enhanced"  # Make sure this matches your folder name and manif
 
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry):
     """Set up HA Discogs from a config entry."""
-    return await hass.config_entries.async_forward_entry_setup(entry, "sensor")
+    return await hass.config_entries.async_forward_entry_setups(entry, ["sensor"])
 
 async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry):
     """Unload a config entry."""
