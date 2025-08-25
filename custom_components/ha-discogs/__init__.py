@@ -13,7 +13,7 @@ from homeassistant.core import HomeAssistant
 from homeassistant.helpers.aiohttp_client import SERVER_SOFTWARE
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
 
-from .const import DOMAIN
+from .const import DOMAIN, DEFAULT_NAME
 
 _LOGGER = logging.getLogger(__name__)
 PLATFORMS = [Platform.SENSOR]
@@ -25,7 +25,6 @@ SERVICE_DOWNLOAD_COLLECTION = "download_collection"
 def get_discogs_data(hass: HomeAssistant, token: str, username: str | None) -> dict:
     """Fetch all data from Discogs in a single synchronous function to prevent lazy loading."""
     
-    # 1. Get Identity and Basic Collection Info
     _discogs_client = discogs_client.Client(SERVER_SOFTWARE, user_token=token)
     identity = _discogs_client.identity()
     raw_data = identity.data
@@ -33,7 +32,6 @@ def get_discogs_data(hass: HomeAssistant, token: str, username: str | None) -> d
     if not username:
         username = raw_data.get("username")
     
-    # 2. Get Collection Value
     collection_value = {}
     if username:
         full_value_url = f"https://api.discogs.com/users/{username}/collection/value"
@@ -45,7 +43,6 @@ def get_discogs_data(hass: HomeAssistant, token: str, username: str | None) -> d
         except requests.exceptions.RequestException as err:
             _LOGGER.warning("Could not fetch collection value: %s", err)
 
-    # 3. Get a Random Record
     random_record_title = None
     random_record_data = {}
     folders = list(identity.collection_folders)
@@ -67,7 +64,6 @@ def get_discogs_data(hass: HomeAssistant, token: str, username: str | None) -> d
             "released": basic_info.get('year'),
         }
 
-    # 4. Compile and return a clean dictionary
     return {
         "user": raw_data.get("name"),
         "username": username,
@@ -79,7 +75,7 @@ def get_discogs_data(hass: HomeAssistant, token: str, username: str | None) -> d
         "collection_value_max": float(re.sub(r'[^\d.]', '', collection_value.get("maximum", "0"))),
         "random_record_title": random_record_title,
         "random_record_data": random_record_data,
-        "raw_collection": list(identity.collection_folders[0].releases) # For the service
+        "raw_collection": list(identity.collection_folders[0].releases)
     }
 
 
@@ -99,15 +95,17 @@ async def async_setup_entry(hass: HomeAssistant, entry):
     hass.data.setdefault(DOMAIN, {})
     conf = entry.data
     token = conf[CONF_TOKEN]
-    name = conf[CONF_NAME]
+    name = conf.get(CONF_NAME, DEFAULT_NAME)
 
     async def async_update_data():
         """Fetch data from API endpoint."""
         try:
-            # The coordinator will call our synchronous data fetcher in an executor
-            return await hass.async_add_executor_job(
-                get_discogs_data, hass, token, hass.data[DOMAIN].get("username")
-            )
+            current_username = hass.data[DOMAIN].get(entry.entry_id, {}).get("username")
+            data = await hass.async_add_executor_job(get_discogs_data, hass, token, current_username)
+            # Store username for next update
+            if data and data.get("username"):
+                 hass.data[DOMAIN].setdefault(entry.entry_id, {})["username"] = data["username"]
+            return data
         except Exception as err:
             raise UpdateFailed(f"Error communicating with API: {err}")
 
@@ -119,28 +117,19 @@ async def async_setup_entry(hass: HomeAssistant, entry):
         update_interval=SCAN_INTERVAL,
     )
 
-    # Fetch initial data so we have it when entities are set up.
     await coordinator.async_config_entry_first_refresh()
-    # Store username for subsequent calls
-    hass.data[DOMAIN]["username"] = coordinator.data.get("username")
-    
     hass.data[DOMAIN][entry.entry_id] = coordinator
 
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
 
-    # --- Register the Service ---
     async def download_collection_service(call):
         """Handle the service call to download the collection."""
         file_path = call.data.get("file_path", hass.config.path("discogs_collection.json"))
         raw_collection = coordinator.data.get("raw_collection")
         if raw_collection:
-            await hass.async_add_executor_job(
-                download_collection_to_json, hass, raw_collection, file_path
-            )
+            await hass.async_add_executor_job(download_collection_to_json, hass, raw_collection, file_path)
 
-    hass.services.async_register(
-        DOMAIN, SERVICE_DOWNLOAD_COLLECTION, download_collection_service
-    )
+    hass.services.async_register(DOMAIN, SERVICE_DOWNLOAD_COLLECTION, download_collection_service)
 
     return True
 
@@ -149,7 +138,7 @@ async def async_unload_entry(hass: HomeAssistant, entry):
     unload_ok = await hass.config_entries.async_unload_platforms(entry, PLATFORMS)
     if unload_ok:
         hass.data[DOMAIN].pop(entry.entry_id)
-        if not hass.data[DOMAIN]: # If no other entries, remove service
+        if not any(hass.data[DOMAIN].get(eid) for eid in hass.data[DOMAIN]):
              hass.services.async_remove(DOMAIN, SERVICE_DOWNLOAD_COLLECTION)
 
     return unload_ok
