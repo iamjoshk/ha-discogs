@@ -82,21 +82,14 @@ SENSOR_TYPES: tuple[SensorEntityDescription, ...] = (
 SENSOR_KEYS: list[str] = [desc.key for desc in SENSOR_TYPES]
 
 
-# ### FIX #1 - PART 1: Isolate ALL blocking API calls into synchronous helper functions.
-
 def get_discogs_data(token: str) -> dict | None:
-    """
-    Fetch all required Discogs data in a single synchronous function.
-    This prevents "lazy loading" of attributes in the async context.
-    """
+    """Fetch all required Discogs data in a single synchronous function."""
     try:
         _discogs_client = discogs_client.Client(SERVER_SOFTWARE, user_token=token)
         identity = _discogs_client.identity()
-
-        # Eagerly fetch all required attributes from the raw .data dictionary
-        # to avoid subsequent blocking calls when accessing properties like .name.
         raw_data = identity.data
-        return {
+        
+        data = {
             "name": raw_data.get("name"),
             "username": raw_data.get("username"),
             "num_collection": raw_data.get("num_collection", 0),
@@ -104,8 +97,10 @@ def get_discogs_data(token: str) -> dict | None:
             "collection_folders": list(identity.collection_folders),
             "curr_abbr": raw_data.get("curr_abbr"),
         }
-    except Exception as e:
-        _LOGGER.exception("An unexpected error occurred during Discogs identity fetch: %s", e)
+        _LOGGER.debug("Successfully fetched Discogs identity data: %s", data)
+        return data
+    except Exception:
+        _LOGGER.exception("An unexpected error occurred during Discogs identity fetch")
         return None
 
 
@@ -119,38 +114,34 @@ def fetch_collection_value(username: str, token: str) -> dict | None:
     _LOGGER.debug("Attempting to fetch collection value from: %s", full_value_url)
 
     try:
-        headers = {
-            "User-Agent": SERVER_SOFTWARE,
-            "Authorization": f"Discogs token={token}"
-        }
-        response = requests.get(full_value_url, headers=headers)
+        headers = { "User-Agent": SERVER_SOFTWARE, "Authorization": f"Discogs token={token}" }
+        response = requests.get(full_value_url, headers=headers, timeout=10)
         response.raise_for_status()
-        return response.json()
+        json_response = response.json()
+        _LOGGER.debug("Successfully fetched collection value data: %s", json_response)
+        return json_response
     except requests.exceptions.RequestException as req_err:
         _LOGGER.warning("RequestException when fetching collection value: %s", req_err)
-    except json.JSONDecodeError as json_err:
-        _LOGGER.warning("JSONDecodeError when parsing collection value response: %s", json_err)
+    except json.JSONDecodeError:
+        _LOGGER.warning("JSONDecodeError when parsing collection value response")
     
     return None
 
 
-# ### FIX #1 - PART 2: The main setup function now ONLY calls the helpers and works with safe dictionaries.
 async def async_setup_entry(hass: HomeAssistant, entry, async_add_entities):
     """Set up Discogs sensors from a config entry."""
     config = entry.data
     token = config["token"]
     name = config.get("name", DEFAULT_NAME)
 
-    _LOGGER.debug("Setting up Discogs Enhanced sensor platform.")
+    _LOGGER.debug("Setting up Discogs sensor platform.")
 
-    # Run the blocking data extraction in the executor
     identity_data = await hass.async_add_executor_job(get_discogs_data, token)
 
     if not identity_data or not identity_data.get("username"):
         _LOGGER.error("Failed to fetch essential Discogs identity data. Cannot set up sensors.")
         return False
 
-    # Initialize a safe data structure. We are no longer using the lazy `discogs_identity` object here.
     discogs_data = {
         "user": identity_data["name"],
         "folders": identity_data["collection_folders"],
@@ -162,7 +153,6 @@ async def async_setup_entry(hass: HomeAssistant, entry, async_add_entities):
         "currency_symbol": identity_data.get("curr_abbr") or "$",
     }
     
-    # Asynchronously fetch the collection value
     collection_value_raw = await hass.async_add_executor_job(
         fetch_collection_value, identity_data["username"], token
     )
@@ -172,9 +162,8 @@ async def async_setup_entry(hass: HomeAssistant, entry, async_add_entities):
         discogs_data["collection_value_median"] = collection_value_raw.get('median', "0.00")
         discogs_data["collection_value_max"] = collection_value_raw.get('maximum', "0.00")
     else:
-        _LOGGER.warning("Discogs API returned no valid data from /collection/value endpoint.")
+        _LOGGER.warning("Could not fetch Discogs collection value; value sensors will be unavailable.")
 
-    # Create sensor entities
     monitored_conditions = config.get(CONF_MONITORED_CONDITIONS, SENSOR_KEYS)
     entities = [
         DiscogsSensor(discogs_data, name, description)
@@ -182,7 +171,13 @@ async def async_setup_entry(hass: HomeAssistant, entry, async_add_entities):
         if description.key in monitored_conditions
     ]
 
+    if not entities:
+        _LOGGER.warning("No sensors were configured to be created.")
+        return False
+
     async_add_entities(entities, True)
+    
+    # Explicitly return True on successful setup.
     return True
 
 
@@ -190,6 +185,7 @@ class DiscogsSensor(SensorEntity):
     """Create a new Discogs sensor for a specific type."""
 
     _attr_attribution = "Data provided by Discogs"
+    _attr_should_poll = True # We are using the synchronous update method
 
     def __init__(
         self, discogs_data, name, description: SensorEntityDescription
@@ -198,7 +194,6 @@ class DiscogsSensor(SensorEntity):
         self.entity_description = description
         self._discogs_data = discogs_data
         self._attrs: dict = {}
-
         self._attr_name = f"{name} {description.name}"
 
         if description.key in [
@@ -206,62 +201,48 @@ class DiscogsSensor(SensorEntity):
             SENSOR_COLLECTION_VALUE_MEDIAN_TYPE,
             SENSOR_COLLECTION_VALUE_MAX_TYPE,
         ]:
-            self._attr_native_unit_of_measurement = self._discogs_data[
-                "currency_symbol"
-            ]
+            self._attr_native_unit_of_measurement = self._discogs_data.get("currency_symbol")
 
     @property
     def extra_state_attributes(self):
         """Return the device state attributes of the sensor."""
-        if self._attr_native_value is None:
-            return None
-
         if self.entity_description.key == SENSOR_RANDOM_RECORD_TYPE and self._attrs:
-            first_format = self._attrs.get('formats', [{}])[0]
+            first_format = self._attrs.get('basic_information', {}).get('formats', [{}])[0]
             format_name = first_format.get('name')
-            descriptions = first_format.get('descriptions', []) 
+            descriptions = first_format.get('descriptions', [])
+            format_str = f"{format_name} ({', '.join(descriptions)})" if descriptions else format_name
 
-            format_str = f"{format_name} ({', '.join(descriptions)})" if descriptions else format_name 
-            
-            first_label = self._attrs.get('labels', [{}])[0]
+            first_label = self._attrs.get('basic_information', {}).get('labels', [{}])[0]
             label_name = first_label.get('name')
             cat_no = first_label.get('catno')
-
+            
             return {
                 "cat_no": cat_no,
-                "cover_image": self._attrs.get("cover_image"),
+                "cover_image": self._attrs.get('basic_information', {}).get('cover_image'),
                 "format": format_str,
                 "label": label_name,
-                "released": self._attrs.get("year"),
+                "released": self._attrs.get('basic_information', {}).get('year'),
                 ATTR_IDENTITY: self._discogs_data["user"],
             }
-        return {
-            ATTR_IDENTITY: self._discogs_data["user"],
-        }
-        
-    # ### FIX #2: Prevent blocking call in `get_random_record`.
+        return {ATTR_IDENTITY: self._discogs_data.get("user")}
+
     def get_random_record(self) -> str | None:
         """Get a random record suggestion from the user's collection."""
         try:
-            if self._discogs_data["folders"] and self._discogs_data["folders"][0].count > 0:
-                collection = self._discogs_data["folders"][0]
+            folders = self._discogs_data.get("folders")
+            if folders and folders[0].count > 0:
+                collection = folders[0]
                 random_index = random.randrange(collection.count)
-                
-                # IMPORTANT: Do NOT access `.release` which is a lazy, blocking call.
-                # Access the `.data` from the CollectionItem itself, which is already loaded.
                 random_record = collection.releases[random_index]
                 self._attrs = random_record.data
                 
                 artist_list = self._attrs.get('basic_information', {}).get('artists', [{}])
-                artist_name = artist_list[0].get('name', 'Unknown Artist') if artist_list else 'Unknown Artist'
+                artist_name = artist_list[0].get('name', 'Unknown Artist')
                 title = self._attrs.get('basic_information', {}).get('title', 'Unknown Title')
-
                 return f"{artist_name} - {title}"
         except (IndexError, ValueError) as e:
             _LOGGER.error("Could not get random record: %s", e)
-        
         return None
-
 
     def update(self) -> None:
         """Set state to the amount of records or collection value."""
@@ -283,7 +264,6 @@ class DiscogsSensor(SensorEntity):
                 return
 
             value_str = self._discogs_data.get(data_key)
-            
             if isinstance(value_str, str) and value_str:
                 numeric_value_str = re.sub(r'[^\d.]', '', value_str)
                 try:
