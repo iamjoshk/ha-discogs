@@ -1,0 +1,11 @@
+{
+  "name": "Discogs Collection Sensor",
+  "content_in_root": false,
+  "domains": ["sensor"],
+  "country": "US",
+  "homeassistant": "2022.0.0",
+  "render_readme": true,
+  "iot_class": "cloud_polling",
+  "integration_type": "integration",
+  "codeowners": ["@iamjoshk"]
+}
