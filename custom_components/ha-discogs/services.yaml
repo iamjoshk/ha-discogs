@@ -1,7 +1,7 @@
 # Describes the services for the ha-discogs integration
 
 download_collection:
-  name: Discogs Download Collection
+  name: Download Collection
   description: Downloads your full Discogs collection data to a JSON file.
   fields:
     file_path:
