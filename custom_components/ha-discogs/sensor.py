@@ -13,7 +13,6 @@ import discogs_client
 import voluptuous as vol
 
 from homeassistant.components.sensor import (
-    PLATFORM_SCHEMA as SENSOR_PLATFORM_SCHEMA,
     SensorEntity,
     SensorEntityDescription,
 )
@@ -23,12 +22,13 @@ from homeassistant.helpers import config_validation as cv
 from homeassistant.helpers.aiohttp_client import SERVER_SOFTWARE
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.typing import ConfigType, DiscoveryInfoType
+from homeassistant.helpers import config_entry_oauth2_flow
+
+from .const import DOMAIN, DEFAULT_NAME
 
 _LOGGER = logging.getLogger(__name__)
 
 ATTR_IDENTITY = "identity"
-
-DEFAULT_NAME = "Discogs"
 
 ICON_RECORD = "mdi:album"
 ICON_PLAYER = "mdi:record-player"
@@ -81,26 +81,12 @@ SENSOR_TYPES: tuple[SensorEntityDescription, ...] = (
 )
 SENSOR_KEYS: list[str] = [desc.key for desc in SENSOR_TYPES]
 
-PLATFORM_SCHEMA = SENSOR_PLATFORM_SCHEMA.extend(
-    {
-        vol.Required(CONF_TOKEN): cv.string,
-        vol.Optional(CONF_NAME, default=DEFAULT_NAME): cv.string,
-        vol.Optional(CONF_MONITORED_CONDITIONS, default=SENSOR_KEYS): vol.All(
-            cv.ensure_list, [vol.In(SENSOR_KEYS)]
-        ),
-    }
-)
 
-
-def setup_platform(
-    hass: HomeAssistant,
-    config: ConfigType,
-    add_entities: AddEntitiesCallback,
-    discovery_info: DiscoveryInfoType | None = None,
-) -> None:
-    """Set up the Discogs sensor."""
-    token = config[CONF_TOKEN]
-    name = config[CONF_NAME]
+async def async_setup_entry(hass, config_entry, async_add_entities):
+    """Set up Discogs sensors from a config entry."""
+    config = config_entry.data
+    token = config["token"]
+    name = config.get("name", DEFAULT_NAME)
 
     _LOGGER.debug("Setting up Discogs Enhanced sensor platform.")
 
@@ -204,7 +190,7 @@ def setup_platform(
         if description.key in monitored_conditions
     ]
 
-    add_entities(entities, True)
+    async_add_entities(entities, True)
 
 
 class DiscogsSensor(SensorEntity):

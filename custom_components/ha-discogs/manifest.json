@@ -12,5 +12,6 @@
     "requests>=2.25.1"
   ],
   "iot_class": "cloud_polling",
-  "integration_type": "integration"
+  "integration_type": "integration",
+  "config_flow": true
 }
