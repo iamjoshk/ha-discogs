@@ -17,9 +17,7 @@ from .const import DOMAIN, DEFAULT_NAME
 
 _LOGGER = logging.getLogger(__name__)
 PLATFORMS = [Platform.SENSOR]
-
 SCAN_INTERVAL = timedelta(minutes=10)
-SERVICE_DOWNLOAD_COLLECTION = "download_collection"
 
 
 def get_discogs_data(token: str) -> dict:
@@ -100,14 +98,20 @@ async def async_setup_entry(hass: HomeAssistant, entry):
     hass.data.setdefault(DOMAIN, {})[entry.entry_id] = coordinator
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
 
-    async def download_collection(call: ServiceCall) -> None:
+    async def download_collection_service(call: ServiceCall) -> None:
         """Handle the service call to download the collection."""
         file_path = call.data.get("file_path", hass.config.path("discogs_collection.json"))
         raw_collection = coordinator.data.get("raw_collection")
         if raw_collection:
             await hass.async_add_executor_job(download_collection_to_json, file_path, raw_collection)
 
-    hass.services.async_register(DOMAIN, SERVICE_DOWNLOAD_COLLECTION, download_collection)
+    # Simplified service registration, matching your working example.
+    hass.services.async_register(
+        DOMAIN,
+        "download_collection",
+        download_collection_service
+    )
+    
     return True
 
 async def async_unload_entry(hass: HomeAssistant, entry):
@@ -115,5 +119,5 @@ async def async_unload_entry(hass: HomeAssistant, entry):
     if unload_ok := await hass.config_entries.async_unload_platforms(entry, PLATFORMS):
         hass.data[DOMAIN].pop(entry.entry_id)
         if not hass.data[DOMAIN]:
-             hass.services.async_remove(DOMAIN, SERVICE_DOWNLOAD_COLLECTION)
+             hass.services.async_remove(DOMAIN, "download_collection")
     return unload_ok
