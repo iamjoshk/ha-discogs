@@ -82,9 +82,9 @@ SENSOR_TYPES: tuple[SensorEntityDescription, ...] = (
 SENSOR_KEYS: list[str] = [desc.key for desc in SENSOR_TYPES]
 
 
-async def async_setup_entry(hass, config_entry, async_add_entities):
+async def async_setup_entry(hass: HomeAssistant, entry, async_add_entities):
     """Set up Discogs sensors from a config entry."""
-    config = config_entry.data
+    config = entry.data
     token = config["token"]
     name = config.get("name", DEFAULT_NAME)
 
