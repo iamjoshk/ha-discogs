@@ -1,5 +1,5 @@
 {
-  "name": "Discogs Collection Sensor",
+  "name": "HA Discogs",
   "content_in_root": false,
   "domains": ["sensor"],
   "country": "US",
