@@ -1,31 +1,155 @@
-"""The Discogs custom integration."""
+"""The Discogs integration."""
 import logging
+import json
+from datetime import timedelta
+import random
+import re
 
-from homeassistant.config_entries import ConfigEntry
+import discogs_client
+import requests
+
+from homeassistant.const import CONF_NAME, CONF_TOKEN, Platform
 from homeassistant.core import HomeAssistant
-from homeassistant.helpers.typing import ConfigType
+from homeassistant.helpers.aiohttp_client import SERVER_SOFTWARE
+from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
+
+from .const import DOMAIN
 
 _LOGGER = logging.getLogger(__name__)
+PLATFORMS = [Platform.SENSOR]
 
-DOMAIN = "ha-discogs"  # Make sure this matches your folder name and manifest.json domain
+SCAN_INTERVAL = timedelta(minutes=10)
+SERVICE_DOWNLOAD_COLLECTION = "download_collection"
 
-async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry):
-    """Set up HA Discogs from a config entry."""
-    return await hass.config_entries.async_forward_entry_setups(entry, ["sensor"])
 
-async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry):
+def get_discogs_data(hass: HomeAssistant, token: str, username: str | None) -> dict:
+    """Fetch all data from Discogs in a single synchronous function to prevent lazy loading."""
+    
+    # 1. Get Identity and Basic Collection Info
+    _discogs_client = discogs_client.Client(SERVER_SOFTWARE, user_token=token)
+    identity = _discogs_client.identity()
+    raw_data = identity.data
+    
+    if not username:
+        username = raw_data.get("username")
+    
+    # 2. Get Collection Value
+    collection_value = {}
+    if username:
+        full_value_url = f"https://api.discogs.com/users/{username}/collection/value"
+        try:
+            headers = {"User-Agent": SERVER_SOFTWARE, "Authorization": f"Discogs token={token}"}
+            response = requests.get(full_value_url, headers=headers, timeout=10)
+            response.raise_for_status()
+            collection_value = response.json()
+        except requests.exceptions.RequestException as err:
+            _LOGGER.warning("Could not fetch collection value: %s", err)
+
+    # 3. Get a Random Record
+    random_record_title = None
+    random_record_data = {}
+    folders = list(identity.collection_folders)
+    if folders and folders[0].count > 0:
+        collection = folders[0]
+        random_release = collection.releases[random.randrange(collection.count)]
+        basic_info = random_release.data.get("basic_information", {})
+        
+        artist_list = basic_info.get('artists', [{}])
+        artist = artist_list[0].get('name', 'Unknown Artist') if artist_list else 'Unknown Artist'
+        title = basic_info.get('title', 'Unknown Title')
+        random_record_title = f"{artist} - {title}"
+        
+        random_record_data = {
+            "cat_no": basic_info.get('labels', [{}])[0].get('catno'),
+            "cover_image": basic_info.get('cover_image'),
+            "format": basic_info.get('formats', [{}])[0].get('name'),
+            "label": basic_info.get('labels', [{}])[0].get('name'),
+            "released": basic_info.get('year'),
+        }
+
+    # 4. Compile and return a clean dictionary
+    return {
+        "user": raw_data.get("name"),
+        "username": username,
+        "collection_count": raw_data.get("num_collection", 0),
+        "wantlist_count": raw_data.get("num_wantlist", 0),
+        "currency_symbol": raw_data.get("curr_abbr") or "$",
+        "collection_value_min": float(re.sub(r'[^\d.]', '', collection_value.get("minimum", "0"))),
+        "collection_value_median": float(re.sub(r'[^\d.]', '', collection_value.get("median", "0"))),
+        "collection_value_max": float(re.sub(r'[^\d.]', '', collection_value.get("maximum", "0"))),
+        "random_record_title": random_record_title,
+        "random_record_data": random_record_data,
+        "raw_collection": list(identity.collection_folders[0].releases) # For the service
+    }
+
+
+def download_collection_to_json(hass: HomeAssistant, raw_collection: list, file_path: str):
+    """Synchronous function to save collection data to a JSON file."""
+    output_data = [release.data for release in raw_collection]
+    try:
+        with open(file_path, 'w', encoding='utf-8') as f:
+            json.dump(output_data, f, indent=4)
+        _LOGGER.info("Successfully saved Discogs collection to %s", file_path)
+    except OSError as e:
+        _LOGGER.error("Failed to save collection to %s: %s", file_path, e)
+
+
+async def async_setup_entry(hass: HomeAssistant, entry):
+    """Set up Discogs from a config entry."""
+    hass.data.setdefault(DOMAIN, {})
+    conf = entry.data
+    token = conf[CONF_TOKEN]
+    name = conf[CONF_NAME]
+
+    async def async_update_data():
+        """Fetch data from API endpoint."""
+        try:
+            # The coordinator will call our synchronous data fetcher in an executor
+            return await hass.async_add_executor_job(
+                get_discogs_data, hass, token, hass.data[DOMAIN].get("username")
+            )
+        except Exception as err:
+            raise UpdateFailed(f"Error communicating with API: {err}")
+
+    coordinator = DataUpdateCoordinator(
+        hass,
+        _LOGGER,
+        name=name,
+        update_method=async_update_data,
+        update_interval=SCAN_INTERVAL,
+    )
+
+    # Fetch initial data so we have it when entities are set up.
+    await coordinator.async_config_entry_first_refresh()
+    # Store username for subsequent calls
+    hass.data[DOMAIN]["username"] = coordinator.data.get("username")
+    
+    hass.data[DOMAIN][entry.entry_id] = coordinator
+
+    await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
+
+    # --- Register the Service ---
+    async def download_collection_service(call):
+        """Handle the service call to download the collection."""
+        file_path = call.data.get("file_path", hass.config.path("discogs_collection.json"))
+        raw_collection = coordinator.data.get("raw_collection")
+        if raw_collection:
+            await hass.async_add_executor_job(
+                download_collection_to_json, hass, raw_collection, file_path
+            )
+
+    hass.services.async_register(
+        DOMAIN, SERVICE_DOWNLOAD_COLLECTION, download_collection_service
+    )
+
+    return True
+
+async def async_unload_entry(hass: HomeAssistant, entry):
     """Unload a config entry."""
-    unload_ok = await hass.config_entries.async_forward_entry_unload(entry, "sensor")
+    unload_ok = await hass.config_entries.async_unload_platforms(entry, PLATFORMS)
+    if unload_ok:
+        hass.data[DOMAIN].pop(entry.entry_id)
+        if not hass.data[DOMAIN]: # If no other entries, remove service
+             hass.services.async_remove(DOMAIN, SERVICE_DOWNLOAD_COLLECTION)
+
     return unload_ok
-
-async def async_reload_entry(hass: HomeAssistant, entry: ConfigEntry):
-    """Reload a config entry."""
-    await async_unload_entry(hass, entry)
-    await async_setup_entry(hass, entry)
-
-def setup(hass: HomeAssistant, config: ConfigType) -> bool:
-    """Set up the Discogs component."""
-    _LOGGER.info("Setting up Discogs custom integration")
-    return True
-    _LOGGER.info("Setting up Discogs custom integration")
-    return True
