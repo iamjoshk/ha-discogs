@@ -1,47 +1,73 @@
+"""Services for the Discogs integration."""
 import logging
+import json
 import requests
-from homeassistant.helpers.storage import Store
+
+from homeassistant.core import HomeAssistant, ServiceCall
 from homeassistant.helpers.aiohttp_client import SERVER_SOFTWARE
+from homeassistant.helpers.json import save_json
+
+from .const import DOMAIN
 
 _LOGGER = logging.getLogger(__name__)
 
-DISCogs_COLLECTION_STORAGE_KEY = "ha_discogs_collection.json"
-EXPORT_COLLECTION_SERVICE = "export_discogs_collection"
 
-def async_register_services(hass, username, token):
-    """Register the export_discogs_collection service."""
+def get_discogs_collection(username: str, token: str) -> list:
+    """Synchronous function to fetch the full Discogs collection with pagination."""
+    if not username:
+        _LOGGER.error("Cannot fetch collection: username not available.")
+        return []
 
-    store = Store(hass, 1, DISCogs_COLLECTION_STORAGE_KEY)
+    url = f"https://api.discogs.com/users/{username}/collection/folders/0/releases"
+    headers = {"User-Agent": SERVER_SOFTWARE, "Authorization": f"Discogs token={token}"}
+    releases = []
+    page = 1
+    per_page = 100
+    
+    while True:
+        params = {"page": page, "per_page": per_page}
+        try:
+            resp = requests.get(url, headers=headers, params=params, timeout=15)
+            resp.raise_for_status()
+            data = resp.json()
+            page_releases = data.get("releases", [])
+            if not page_releases:
+                break
+            releases.extend(release.get("basic_information", {}) for release in page_releases)
+            pagination = data.get("pagination", {})
+            if page >= pagination.get("pages", 1):
+                break
+            page += 1
+        except requests.exceptions.RequestException as err:
+            _LOGGER.error("Failed to fetch page %d of Discogs collection: %s", page, err)
+            break
 
-    def handle_export_collection(call):
-        """Export Discogs collection to Home Assistant storage."""
-        if not username or username == "Unknown":
-            _LOGGER.error("Cannot export collection: username not available.")
+    _LOGGER.info("Fetched a total of %d releases from Discogs collection.", len(releases))
+    return releases
+
+
+async def async_register_services(hass: HomeAssistant, username: str, token: str) -> None:
+    """Register the services for the Discogs integration."""
+
+    async def download_collection_service(call: ServiceCall) -> None:
+        """Handle the service call to download the collection."""
+        if not username:
+            _LOGGER.error("Cannot download collection, Discogs username is unknown.")
             return
 
-        url = f"https://api.discogs.com/users/{username}/collection/folders/0/releases"
-        headers = {
-            "User-Agent": SERVER_SOFTWARE,
-            "Authorization": f"Discogs token={token}"
-        }
-        releases = []
-        page = 1
-        per_page = 100
-        try:
-            while True:
-                params = {"page": page, "per_page": per_page}
-                resp = requests.get(url, headers=headers, params=params)
-                resp.raise_for_status()
-                data = resp.json()
-                releases.extend(data.get("releases", []))
-                if page >= data.get("pagination", {}).get("pages", 1):
-                    break
-                page += 1
-            hass.add_job(store.async_save, releases)
-            _LOGGER.info("Exported %d releases to .storage/%s", len(releases), DISCogs_COLLECTION_STORAGE_KEY)
-        except Exception as err:
-            _LOGGER.error("Failed to export Discogs collection: %s", err)
+        file_path = call.data.get("file_path", hass.config.path("discogs_collection.json"))
+        _LOGGER.info("Starting Discogs collection download to %s", file_path)
+        
+        collection_data = await hass.async_add_executor_job(
+            get_discogs_collection, username, token
+        )
+        
+        if collection_data:
+            await hass.async_add_executor_job(save_json, file_path, collection_data)
+            _LOGGER.info("Successfully saved Discogs collection to %s", file_path)
 
-    hass.services.register(
-        "ha_discogs", EXPORT_COLLECTION_SERVICE, handle_export_collection
+    hass.services.async_register(
+        DOMAIN,
+        "download_collection",
+        download_collection_service
     )
