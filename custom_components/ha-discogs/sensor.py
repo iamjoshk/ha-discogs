@@ -5,9 +5,9 @@ from __future__ import annotations
 from datetime import timedelta
 import logging
 import random
-import re # Import the re module for regex operations
-import json # Ensure json is imported at the top
-import requests # NEW: Import the requests library
+import re
+import json
+import requests
 
 import discogs_client
 import voluptuous as vol
@@ -82,6 +82,31 @@ SENSOR_TYPES: tuple[SensorEntityDescription, ...] = (
 SENSOR_KEYS: list[str] = [desc.key for desc in SENSOR_TYPES]
 
 
+# --- NEW HELPER FUNCTION TO ISOLATE BLOCKING CALL ---
+def fetch_collection_value(username, token):
+    """Fetch collection value from Discogs API synchronously."""
+    full_value_url = f"https://api.discogs.com/users/{username}/collection/value"
+    _LOGGER.debug("Attempting to fetch collection value from: %s", full_value_url)
+
+    try:
+        headers = {
+            "User-Agent": SERVER_SOFTWARE,
+            "Authorization": f"Discogs token={token}"
+        }
+        response = requests.get(full_value_url, headers=headers)
+        response.raise_for_status()  # Raise an exception for HTTP errors
+        return response.json()
+    except requests.exceptions.RequestException as req_err:
+        _LOGGER.warning("RequestException when fetching collection value: %s", req_err)
+    except json.JSONDecodeError as json_err:
+        _LOGGER.warning("JSONDecodeError when parsing collection value response: %s", json_err)
+    except Exception as e:
+        _LOGGER.warning("An unexpected error occurred while fetching collection value: %s", e)
+    
+    return None # Return None on any failure
+
+
+# --- REVISED ASYNC SETUP FUNCTION ---
 async def async_setup_entry(hass: HomeAssistant, entry, async_add_entities):
     """Set up Discogs sensors from a config entry."""
     config = entry.data
@@ -91,107 +116,56 @@ async def async_setup_entry(hass: HomeAssistant, entry, async_add_entities):
     _LOGGER.debug("Setting up Discogs Enhanced sensor platform.")
 
     def get_discogs_identity():
+        """Synchronous function to fetch user identity."""
         _discogs_client = discogs_client.Client(SERVER_SOFTWARE, user_token=token)
         return _discogs_client.identity()
 
     # Run the blocking identity fetch in the executor
     try:
         discogs_identity = await hass.async_add_executor_job(get_discogs_identity)
-    except Exception as err:
-        _LOGGER.exception("An unexpected error occurred during Discogs sensor setup, falling back to defaults.")
+    except Exception:
+        _LOGGER.exception("An unexpected error occurred during Discogs identity fetch. Cannot set up sensors.")
         return False
 
-    # Initialize these values to safe defaults
-    collection_value_min_str = "0.00"
-    collection_value_median_str = "0.00"
-    collection_value_max_str = "0.00"
-    currency_symbol = "$" # Default currency symbol. Will try to fetch from curr_abbr.
-
-    discogs_data: dict = { # Initialize discogs_data to prevent UnboundLocalError
-        "user": "Unknown",
-        "folders": [],
-        "collection_count": 0,
-        "wantlist_count": 0,
-        "collection_value_min": collection_value_min_str,
-        "collection_value_median": collection_value_median_str,
-        "collection_value_max": collection_value_max_str,
-        "currency_symbol": currency_symbol, # Placeholder
+    # Initialize data with safe defaults from the identity object
+    discogs_data = {
+        "user": discogs_identity.name,
+        "folders": discogs_identity.collection_folders,
+        "collection_count": discogs_identity.num_collection,
+        "wantlist_count": discogs_identity.num_wantlist,
+        "collection_value_min": "0.00",
+        "collection_value_median": "0.00",
+        "collection_value_max": "0.00",
+        "currency_symbol": "$",  # Default currency symbol
     }
 
-    try:
-        # Fetch identity data first to get username, counts, and preferred currency abbreviation
-        _LOGGER.debug("Discogs identity fetched: %s (Username: %s)", discogs_identity.name, discogs_identity.username)
-        
-        # Populate basic identity data
-        discogs_data["user"] = discogs_identity.name
-        discogs_data["folders"] = discogs_identity.collection_folders
-        discogs_data["collection_count"] = discogs_identity.num_collection
-        discogs_data["wantlist_count"] = discogs_identity.num_wantlist
-        
-        # Update currency symbol from identity if available
-        # Check discogs_identity.data for curr_abbr as well, as sometimes it's in the raw data
-        if hasattr(discogs_identity, 'curr_abbr') and discogs_identity.curr_abbr:
-            currency_symbol = discogs_identity.curr_abbr # e.g., "EUR", "USD"
-            _LOGGER.debug("Detected user currency abbreviation from identity: %s", currency_symbol)
-        elif hasattr(discogs_identity, 'data') and isinstance(discogs_identity.data, dict) and 'curr_abbr' in discogs_identity.data and discogs_identity.data['curr_abbr']:
-            currency_symbol = discogs_identity.data['curr_abbr']
-            _LOGGER.debug("Detected user currency abbreviation from identity.data: %s", currency_symbol)
-        else:
-            _LOGGER.warning("Could not retrieve currency abbreviation from Discogs identity. Defaulting to '%s'.", currency_symbol)
-        discogs_data["currency_symbol"] = currency_symbol # Update in data dict
+    # Update currency symbol from identity if available
+    if hasattr(discogs_identity, 'curr_abbr') and discogs_identity.curr_abbr:
+        discogs_data["currency_symbol"] = discogs_identity.curr_abbr
+    elif hasattr(discogs_identity, 'data') and discogs_identity.data.get('curr_abbr'):
+        discogs_data["currency_symbol"] = discogs_identity.data['curr_abbr']
+    else:
+        _LOGGER.warning("Could not retrieve currency abbreviation. Defaulting to '$'.")
+    
+    # Asynchronously fetch the collection value using the new helper function
+    collection_value_raw = await hass.async_add_executor_job(
+        fetch_collection_value, discogs_identity.username, token
+    )
 
+    if collection_value_raw and isinstance(collection_value_raw, dict):
+        discogs_data["collection_value_min"] = collection_value_raw.get('minimum', "0.00")
+        discogs_data["collection_value_median"] = collection_value_raw.get('median', "0.00")
+        discogs_data["collection_value_max"] = collection_value_raw.get('maximum', "0.00")
+        _LOGGER.debug(
+            "Parsed collection values: Min=%s, Median=%s, Max=%s",
+            discogs_data["collection_value_min"],
+            discogs_data["collection_value_median"],
+            discogs_data["collection_value_max"],
+        )
+    else:
+        _LOGGER.warning("Discogs API returned no valid data from /collection/value endpoint. Values will default to 0.")
 
-        # --- CORRECTED: Use requests library directly for collection value ---
-        # Manually construct headers with the user_token for authentication.
-        
-        full_value_url = f"https://api.discogs.com/users/{discogs_identity.username}/collection/value"
-        _LOGGER.debug("Attempting to fetch collection value from direct URL using requests: %s", full_value_url)
-        
-        collection_value_raw = None
-        try:
-            headers = {
-                "User-Agent": SERVER_SOFTWARE, # Use Home Assistant's user agent
-                "Authorization": f"Discogs token={token}" # Manual token authentication
-            }
-            response = requests.get(full_value_url, headers=headers)
-            response.raise_for_status() # Raise an exception for HTTP errors (4xx or 5xx)
-            
-            collection_value_raw = response.json()
-            _LOGGER.debug("Raw JSON response from collection value endpoint: %s", collection_value_raw)
-
-        except requests.exceptions.RequestException as req_err: # Catch any request-related errors (HTTP, connection, etc.)
-            _LOGGER.warning("RequestException when fetching collection value from direct endpoint: %s. Defaulting to 0.00. URL: %s", req_err, full_value_url)
-        except json.JSONDecodeError as json_err:
-            _LOGGER.warning("JSONDecodeError when parsing response from collection value endpoint: %s. Raw content: %s. Defaulting to 0.00.", json_err, response.text[:200] if 'response' in locals() else 'No response content')
-        except Exception as e:
-            _LOGGER.warning("An unexpected error occurred while fetching collection value from direct endpoint: %s. Defaulting to 0.00. URL: %s", e, full_value_url)
-
-        if collection_value_raw and isinstance(collection_value_raw, dict): # Check if response is a non-empty dictionary
-            # The response is a dict with 'minimum', 'median', 'maximum' keys
-            collection_value_min_str = collection_value_raw.get('minimum', "0.00")
-            collection_value_median_str = collection_value_raw.get('median', "0.00")
-            collection_value_max_str = collection_value_raw.get('maximum', "0.00")
-            _LOGGER.debug("Parsed collection values: Min=%s, Median=%s, Max=%s",
-                          collection_value_min_str, collection_value_median_str, collection_value_max_str)
-        else:
-            _LOGGER.warning("Discogs API returned no valid dictionary data from /collection/value endpoint. Defaulting to 0.00.")
-
-        # Update discogs_data with potentially fetched values
-        discogs_data["collection_value_min"] = collection_value_min_str
-        discogs_data["collection_value_median"] = collection_value_median_str
-        discogs_data["collection_value_max"] = collection_value_max_str
-        # currency_symbol is already set from curr_abbr or default "$"
-
-    except discogs_client.exceptions.HTTPError as err:
-        _LOGGER.error("API token is not valid or Discogs API error when fetching initial data: %s", err)
-        return # If critical API error during setup, do not add entities.
-    except Exception as err: # Catch any other unexpected errors during initial data fetch
-        _LOGGER.exception("An unexpected error occurred during Discogs sensor setup, falling back to defaults.")
-        # discogs_data was already initialized with defaults at the beginning of the try block
-        _LOGGER.warning("Discogs collection value sensors might be unavailable due to missing data. Check debug logs for details.")
-
-
-    # monitored_conditions: use all sensors if not present in config entry
+    # Create sensor entities
     monitored_conditions = config.get(CONF_MONITORED_CONDITIONS, SENSOR_KEYS)
     entities = [
         DiscogsSensor(discogs_data, name, description)
