@@ -1,10 +1,10 @@
 {
   "domain": "ha-discogs",
-  "name": "Discogs",
+  "name": "HA Discogs",
   "config_flow": true,
   "documentation": "https://github.com/iamjoshk/ha-discogs",
   "issue_tracker": "https://github.com/iamjoshk/ha-discogs/issues",
-  "codeowners": "@iamjosh",
+  "codeowners": "@iamjoshk",
   "version": "0.0.2",
   "iot_class": "cloud_polling"
 }
