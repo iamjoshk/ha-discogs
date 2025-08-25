@@ -90,8 +90,17 @@ async def async_setup_entry(hass: HomeAssistant, entry, async_add_entities):
 
     _LOGGER.debug("Setting up Discogs Enhanced sensor platform.")
 
-    _discogs_client = discogs_client.Client(SERVER_SOFTWARE, user_token=token)
-    
+    def get_discogs_identity():
+        _discogs_client = discogs_client.Client(SERVER_SOFTWARE, user_token=token)
+        return _discogs_client.identity()
+
+    # Run the blocking identity fetch in the executor
+    try:
+        discogs_identity = await hass.async_add_executor_job(get_discogs_identity)
+    except Exception as err:
+        _LOGGER.exception("An unexpected error occurred during Discogs sensor setup, falling back to defaults.")
+        return False
+
     # Initialize these values to safe defaults
     collection_value_min_str = "0.00"
     collection_value_median_str = "0.00"
@@ -111,7 +120,6 @@ async def async_setup_entry(hass: HomeAssistant, entry, async_add_entities):
 
     try:
         # Fetch identity data first to get username, counts, and preferred currency abbreviation
-        discogs_identity = _discogs_client.identity()
         _LOGGER.debug("Discogs identity fetched: %s (Username: %s)", discogs_identity.name, discogs_identity.username)
         
         # Populate basic identity data
@@ -183,7 +191,8 @@ async def async_setup_entry(hass: HomeAssistant, entry, async_add_entities):
         _LOGGER.warning("Discogs collection value sensors might be unavailable due to missing data. Check debug logs for details.")
 
 
-    monitored_conditions = config[CONF_MONITORED_CONDITIONS]
+    # monitored_conditions: use all sensors if not present in config entry
+    monitored_conditions = config.get(CONF_MONITORED_CONDITIONS, SENSOR_KEYS)
     entities = [
         DiscogsSensor(discogs_data, name, description)
         for description in SENSOR_TYPES
@@ -191,6 +200,7 @@ async def async_setup_entry(hass: HomeAssistant, entry, async_add_entities):
     ]
 
     async_add_entities(entities, True)
+    return True
 
 
 class DiscogsSensor(SensorEntity):
