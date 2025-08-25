@@ -1,6 +1,5 @@
 """Services for the Discogs integration."""
 import logging
-import json
 import requests
 
 from homeassistant.core import HomeAssistant, ServiceCall
@@ -12,7 +11,7 @@ from .const import DOMAIN
 _LOGGER = logging.getLogger(__name__)
 
 
-def get_discogs_collection(username: str, token: str) -> list:
+def get_full_discogs_collection(username: str, token: str) -> list:
     """Synchronous function to fetch the full Discogs collection with pagination."""
     if not username:
         _LOGGER.error("Cannot fetch collection: username not available.")
@@ -59,15 +58,12 @@ async def async_register_services(hass: HomeAssistant, username: str, token: str
         _LOGGER.info("Starting Discogs collection download to %s", file_path)
         
         collection_data = await hass.async_add_executor_job(
-            get_discogs_collection, username, token
+            get_full_discogs_collection, username, token
         )
         
         if collection_data:
             await hass.async_add_executor_job(save_json, file_path, collection_data)
-            _LOGGER.info("Successfully saved Discogs collection to %s", file_path)
 
     hass.services.async_register(
-        DOMAIN,
-        "download_collection",
-        download_collection_service
+        DOMAIN, "download_collection", download_collection_service
     )
