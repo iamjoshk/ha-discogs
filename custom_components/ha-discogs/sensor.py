@@ -1,6 +1,5 @@
 """Sensor platform for Discogs."""
 from __future__ import annotations
-import logging
 from homeassistant.components.sensor import SensorEntity, SensorEntityDescription
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 from .const import (
@@ -8,8 +7,6 @@ from .const import (
     SENSOR_COLLECTION_VALUE_MIN_TYPE, SENSOR_COLLECTION_VALUE_MEDIAN_TYPE,
     SENSOR_COLLECTION_VALUE_MAX_TYPE, UNIT_RECORDS, ICON_RECORD, ICON_PLAYER, ICON_CASH,
 )
-
-_LOGGER = logging.getLogger(__name__)
 
 SENSOR_TYPES: tuple[SensorEntityDescription, ...] = (
     SensorEntityDescription(
@@ -32,13 +29,14 @@ async def async_setup_entry(hass, config_entry, async_add_entities):
 
 class DiscogsSensor(CoordinatorEntity, SensorEntity):
     """A sensor implementation for the Discogs integration."""
+    _attr_has_entity_name = True
 
     def __init__(self, coordinator, description: SensorEntityDescription):
         """Initialize the sensor."""
         super().__init__(coordinator)
         self.entity_description = description
-        self._attr_name = f"{coordinator.name} {description.name}"
         self._attr_unique_id = f"{coordinator.config_entry.entry_id}_{description.key}"
+        self._attr_device_info = {"identifiers": {(DOMAIN, coordinator.config_entry.entry_id)}, "name": coordinator.name}
         if description.key in [
             SENSOR_COLLECTION_VALUE_MIN_TYPE, SENSOR_COLLECTION_VALUE_MEDIAN_TYPE,
             SENSOR_COLLECTION_VALUE_MAX_TYPE
