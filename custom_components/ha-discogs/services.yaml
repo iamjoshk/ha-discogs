@@ -1,0 +1,12 @@
+# Describes the services for the ha-discogs integration
+
+discogs_download_collection:
+  name: Discogs Download Collection
+  description: Downloads your full Discogs collection data to a JSON file.
+  fields:
+    file_path:
+      name: File Path
+      description: "Optional. The full path where the JSON file will be saved. Must be within your Home Assistant configuration directory. Defaults to /config/discogs_collection.json."
+      selector:
+        text:
+      example: "/config/my_discogs_collection.json"
