@@ -1,10 +1,8 @@
 download_collection:
   name: Download Collection
-  description: Downloads your full Discogs collection data to a JSON file.
+  description: "Downloads your full Discogs collection data to a JSON file."
   fields:
-    file_path:
-      name: File Path
-      description: "Optional. The full path where the JSON file will be saved. Must be within your Home Assistant configuration directory. Defaults to /config/discogs_collection.json."
-      example: "/config/my_discogs_collection.json"
-      selector:
-        text:
+    path:
+      name: Path
+      description: "The path to save the exported JSON file."
+      example: "/config/discogs_collection.json"
