@@ -9,7 +9,7 @@ import discogs_client
 import requests
 
 from homeassistant.const import CONF_NAME, CONF_TOKEN, Platform
-from homeassistant.core import HomeAssistant
+from homeassistant.core import HomeAssistant, ServiceCall
 from homeassistant.helpers.aiohttp_client import SERVER_SOFTWARE
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
 
@@ -23,8 +23,7 @@ SERVICE_DOWNLOAD_COLLECTION = "download_collection"
 
 
 def get_discogs_data(token: str, username: str | None) -> dict:
-    """Fetch all data from Discogs in a single synchronous function to prevent lazy loading."""
-    
+    """Fetch all data from Discogs in a single synchronous function."""
     _discogs_client = discogs_client.Client(SERVER_SOFTWARE, user_token=token)
     identity = _discogs_client.identity()
     raw_data = identity.data
@@ -37,7 +36,7 @@ def get_discogs_data(token: str, username: str | None) -> dict:
         full_value_url = f"https://api.discogs.com/users/{username}/collection/value"
         try:
             headers = {"User-Agent": SERVER_SOFTWARE, "Authorization": f"Discogs token={token}"}
-            response = requests.get(full_value_url, headers=headers, timeout=10)
+            response = requests.get(full_value_url, headers=headers, timeout=15)
             response.raise_for_status()
             collection_value = response.json()
         except requests.exceptions.RequestException as err:
@@ -87,48 +86,59 @@ def download_collection_to_json(file_path: str, raw_collection: list):
             json.dump(output_data, f, indent=4)
         _LOGGER.info("Successfully saved Discogs collection to %s", file_path)
     except OSError as e:
-        _LOGGER.error("Failed to save collection to %s: %s", file_path, e)
+        _LOGGER.error("Failed to save collection to %s: %s", e)
 
 
 async def async_setup_entry(hass: HomeAssistant, entry):
     """Set up Discogs from a config entry."""
-    hass.data.setdefault(DOMAIN, {})
     conf = entry.data
     token = conf[CONF_TOKEN]
     name = conf.get(CONF_NAME, DEFAULT_NAME)
-
+    
+    # Create the coordinator instance
     async def async_update_data():
-        """Fetch data from API endpoint."""
         try:
-            current_username = hass.data[DOMAIN].get(entry.entry_id, {}).get("username")
-            data = await hass.async_add_executor_job(get_discogs_data, token, current_username)
-            if data and data.get("username"):
-                 hass.data[DOMAIN].setdefault(entry.entry_id, {})["username"] = data["username"]
-            return data
+            return await hass.async_add_executor_job(get_discogs_data, token, None)
         except Exception as err:
             raise UpdateFailed(f"Error communicating with API: {err}")
 
     coordinator = DataUpdateCoordinator(
-        hass,
-        _LOGGER,
-        name=name,
-        update_method=async_update_data,
-        update_interval=SCAN_INTERVAL,
+        hass, _LOGGER, name=name, update_method=async_update_data, update_interval=SCAN_INTERVAL,
     )
 
-    await coordinator.async_config_entry_first_refresh()
-    hass.data[DOMAIN][entry.entry_id] = coordinator
+    # Store the coordinator in a central place
+    hass.data.setdefault(DOMAIN, {})[entry.entry_id] = coordinator
 
+    # Fetch initial data
+    await coordinator.async_config_entry_first_refresh()
+
+    # Set up platforms (sensor)
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
 
-    async def download_collection_service(call):
-        """Handle the service call to download the collection."""
-        file_path = call.data.get("file_path", hass.config.path("discogs_collection.json"))
-        raw_collection = coordinator.data.get("raw_collection")
-        if raw_collection:
-            await hass.async_add_executor_job(download_collection_to_json, file_path, raw_collection)
+    # --- REVISED SERVICE REGISTRATION ---
+    # This is a separate handler class to ensure clean scope
+    class DiscogsServiceHandler:
+        def __init__(self, hass: HomeAssistant, coordinator: DataUpdateCoordinator):
+            self.hass = hass
+            self.coordinator = coordinator
 
-    hass.services.async_register(DOMAIN, SERVICE_DOWNLOAD_COLLECTION, download_collection_service)
+        async def download_collection(self, call: ServiceCall) -> None:
+            """Handle the service call to download the collection."""
+            _LOGGER.info("Download collection service called.")
+            file_path = call.data.get("file_path", self.hass.config.path("discogs_collection.json"))
+            raw_collection = self.coordinator.data.get("raw_collection")
+            
+            if raw_collection:
+                await self.hass.async_add_executor_job(download_collection_to_json, file_path, raw_collection)
+            else:
+                _LOGGER.warning("No collection data available to download.")
+
+    # Instantiate the handler and register the service
+    service_handler = DiscogsServiceHandler(hass, coordinator)
+    hass.services.async_register(
+        DOMAIN, SERVICE_DOWNLOAD_COLLECTION, service_handler.download_collection
+    )
+
     return True
 
 async def async_unload_entry(hass: HomeAssistant, entry):
