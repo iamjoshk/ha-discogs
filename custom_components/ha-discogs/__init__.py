@@ -22,7 +22,7 @@ SCAN_INTERVAL = timedelta(minutes=10)
 SERVICE_DOWNLOAD_COLLECTION = "download_collection"
 
 
-def get_discogs_data(hass: HomeAssistant, token: str, username: str | None) -> dict:
+def get_discogs_data(token: str, username: str | None) -> dict:
     """Fetch all data from Discogs in a single synchronous function to prevent lazy loading."""
     
     _discogs_client = discogs_client.Client(SERVER_SOFTWARE, user_token=token)
@@ -79,7 +79,7 @@ def get_discogs_data(hass: HomeAssistant, token: str, username: str | None) -> d
     }
 
 
-def download_collection_to_json(hass: HomeAssistant, raw_collection: list, file_path: str):
+def download_collection_to_json(file_path: str, raw_collection: list):
     """Synchronous function to save collection data to a JSON file."""
     output_data = [release.data for release in raw_collection]
     try:
@@ -101,8 +101,7 @@ async def async_setup_entry(hass: HomeAssistant, entry):
         """Fetch data from API endpoint."""
         try:
             current_username = hass.data[DOMAIN].get(entry.entry_id, {}).get("username")
-            data = await hass.async_add_executor_job(get_discogs_data, hass, token, current_username)
-            # Store username for next update
+            data = await hass.async_add_executor_job(get_discogs_data, token, current_username)
             if data and data.get("username"):
                  hass.data[DOMAIN].setdefault(entry.entry_id, {})["username"] = data["username"]
             return data
@@ -127,10 +126,9 @@ async def async_setup_entry(hass: HomeAssistant, entry):
         file_path = call.data.get("file_path", hass.config.path("discogs_collection.json"))
         raw_collection = coordinator.data.get("raw_collection")
         if raw_collection:
-            await hass.async_add_executor_job(download_collection_to_json, hass, raw_collection, file_path)
+            await hass.async_add_executor_job(download_collection_to_json, file_path, raw_collection)
 
     hass.services.async_register(DOMAIN, SERVICE_DOWNLOAD_COLLECTION, download_collection_service)
-
     return True
 
 async def async_unload_entry(hass: HomeAssistant, entry):
@@ -138,7 +136,6 @@ async def async_unload_entry(hass: HomeAssistant, entry):
     unload_ok = await hass.config_entries.async_unload_platforms(entry, PLATFORMS)
     if unload_ok:
         hass.data[DOMAIN].pop(entry.entry_id)
-        if not any(hass.data[DOMAIN].get(eid) for eid in hass.data[DOMAIN]):
+        if not hass.data[DOMAIN]:
              hass.services.async_remove(DOMAIN, SERVICE_DOWNLOAD_COLLECTION)
-
     return unload_ok
