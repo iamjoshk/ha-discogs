@@ -7,7 +7,6 @@
   "dependencies": [],
   "codeowners": ["@iamjoshk"],
   "requirements": [
-    "discogs-client>=2.3.13",
     "voluptuous>=0.13.1",
     "requests>=2.25.1"
   ],
