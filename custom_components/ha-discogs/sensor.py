@@ -1,66 +1,69 @@
 """Sensor platform for Discogs."""
-from __future__ import annotations
-from homeassistant.components.sensor import SensorEntity, SensorEntityDescription
-from homeassistant.helpers.update_coordinator import CoordinatorEntity
-from .const import (
-    DOMAIN, SENSOR_COLLECTION_TYPE, SENSOR_WANTLIST_TYPE, SENSOR_RANDOM_RECORD_TYPE,
-    SENSOR_COLLECTION_VALUE_MIN_TYPE, SENSOR_COLLECTION_VALUE_MEDIAN_TYPE,
-    SENSOR_COLLECTION_VALUE_MAX_TYPE, UNIT_RECORDS, ICON_RECORD, ICON_PLAYER, ICON_CASH,
-)
+import logging
+from homeassistant.components.sensor import SensorEntity
+from homeassistant.helpers.entity import Entity
 
-SENSOR_TYPES: tuple[SensorEntityDescription, ...] = (
-    SensorEntityDescription(
-        key=SENSOR_COLLECTION_TYPE, name="Collection", icon=ICON_RECORD, native_unit_of_measurement=UNIT_RECORDS
-    ),
-    SensorEntityDescription(
-        key=SENSOR_WANTLIST_TYPE, name="Wantlist", icon=ICON_RECORD, native_unit_of_measurement=UNIT_RECORDS
-    ),
-    SensorEntityDescription(key=SENSOR_RANDOM_RECORD_TYPE, name="Random Record", icon=ICON_PLAYER),
-    SensorEntityDescription(key=SENSOR_COLLECTION_VALUE_MIN_TYPE, name="Collection Value (Min)", icon=ICON_CASH),
-    SensorEntityDescription(key=SENSOR_COLLECTION_VALUE_MEDIAN_TYPE, name="Collection Value (Median)", icon=ICON_CASH),
-    SensorEntityDescription(key=SENSOR_COLLECTION_VALUE_MAX_TYPE, name="Collection Value (Max)", icon=ICON_CASH),
-)
+from .const import DOMAIN
+
+_LOGGER = logging.getLogger(__name__)
 
 async def async_setup_entry(hass, config_entry, async_add_entities):
-    """Set up the sensor platform."""
-    coordinator = hass.data[DOMAIN][config_entry.entry_id]
-    entities = [DiscogsSensor(coordinator, description) for description in SENSOR_TYPES]
-    async_add_entities(entities)
+    """Set up the sensor platform from a config entry."""
+    data = hass.data[DOMAIN][config_entry.entry_id]
+    identity = data["identity"]
+    
+    async_add_entities([
+        DiscogsCollectionSensor(identity),
+        DiscogsWantlistSensor(identity)
+    ], update_before_add=True)
 
-class DiscogsSensor(CoordinatorEntity, SensorEntity):
-    """A sensor implementation for the Discogs integration."""
-    _attr_has_entity_name = True
+class DiscogsSensorBase(Entity):
+    """Base class for Discogs sensors."""
+    _attr_should_poll = True
+    _attr_attribution = "Data provided by Discogs"
 
-    def __init__(self, coordinator, description: SensorEntityDescription):
-        """Initialize the sensor."""
-        super().__init__(coordinator)
-        self.entity_description = description
-        self._attr_unique_id = f"{coordinator.config_entry.entry_id}_{description.key}"
-        self._attr_device_info = {"identifiers": {(DOMAIN, coordinator.config_entry.entry_id)}, "name": coordinator.name}
-        if description.key in [
-            SENSOR_COLLECTION_VALUE_MIN_TYPE, SENSOR_COLLECTION_VALUE_MEDIAN_TYPE,
-            SENSOR_COLLECTION_VALUE_MAX_TYPE
-        ]:
-            self._attr_native_unit_of_measurement = self.coordinator.data.get("currency_symbol")
+    def __init__(self, identity):
+        self._identity = identity
+
+    @property
+    def device_info(self):
+        return {
+            "identifiers": {(DOMAIN, self._identity.username)},
+            "name": f"Discogs ({self._identity.username})",
+            "manufacturer": "Discogs",
+        }
+
+    def update(self):
+        """Refresh data from Discogs by calling the synchronous refresh method."""
+        try:
+            self._identity.refresh()
+        except Exception as e:
+            _LOGGER.error("Failed to update Discogs data: %s", e)
+
+class DiscogsCollectionSensor(DiscogsSensorBase):
+    """Sensor for Discogs collection count."""
+    _attr_name = "Discogs Collection"
+    _attr_icon = "mdi:album"
+    _attr_native_unit_of_measurement = "releases"
+
+    @property
+    def unique_id(self):
+        return f"{self._identity.username}_collection"
 
     @property
     def native_value(self):
-        """Return the state of the sensor."""
-        value_map = {
-            SENSOR_COLLECTION_TYPE: "collection_count",
-            SENSOR_WANTLIST_TYPE: "wantlist_count",
-            SENSOR_RANDOM_RECORD_TYPE: "random_record_title",
-            SENSOR_COLLECTION_VALUE_MIN_TYPE: "collection_value_min",
-            SENSOR_COLLECTION_VALUE_MEDIAN_TYPE: "collection_value_median",
-            SENSOR_COLLECTION_VALUE_MAX_TYPE: "collection_value_max",
-        }
-        return self.coordinator.data.get(value_map.get(self.entity_description.key))
+        return self._identity.num_collection
+
+class DiscogsWantlistSensor(DiscogsSensorBase):
+    """Sensor for Discogs wantlist count."""
+    _attr_name = "Discogs Wantlist"
+    _attr_icon = "mdi:album"
+    _attr_native_unit_of_measurement = "releases"
 
     @property
-    def extra_state_attributes(self):
-        """Return the state attributes."""
-        attrs = {"user": self.coordinator.data.get("user")}
-        if self.entity_description.key == SENSOR_RANDOM_RECORD_TYPE:
-            if random_record_data := self.coordinator.data.get("random_record_data"):
-                attrs.update(random_record_data)
-        return attrs
+    def unique_id(self):
+        return f"{self._identity.username}_wantlist"
+
+    @property
+    def native_value(self):
+        return self._identity.num_wantlist
