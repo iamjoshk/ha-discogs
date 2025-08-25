@@ -1,7 +1,7 @@
 """Constants for the Discogs integration."""
 
 DOMAIN = "ha-discogs"
-DEFAULT_NAME = "Discogs"
+DEFAULT_NAME = "HA Discogs"
 
 # Sensor Types
 SENSOR_COLLECTION_TYPE = "collection"
