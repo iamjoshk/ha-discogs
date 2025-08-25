@@ -1,0 +1,12 @@
+{
+  "domain": "ha_discogs",
+  "name": "HA Discogs",
+  "version": "1.0.0",
+  "codeowners": ["@iamjoshk"],
+  "documentation": "https://github.com/iamjoshk/ha-discogs",
+  "issue_tracker": "https://github.com/iamjoshk/ha-discogs/issues",
+  "iot_class": "cloud_polling",
+  "loggers": ["discogs_client"],
+  "quality_scale": "legacy",
+  "requirements": ["discogs-client==2.3.0"]
+}
