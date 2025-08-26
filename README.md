@@ -1,73 +1,126 @@
-## Home Assistant Discogs Enhanced Integration
+# HA Discogs - Home Assistant Discogs Integration
 
-[![hacs_badge](https://my.home-assistant.io/badges/hacs_repository.svg)](https://my.home-assistant.io/redirect/hacs_repository/?owner=andreasc1&repository=homeassistant-discogs-enhanced&category=integration)
+[![hacs_badge](https://img.shields.io/badge/HACS-Custom-orange.svg)](https://github.com/custom-components/hacs)
+[![GitHub release (latest by date)](https://img.shields.io/github/v/release/iamjoshk/ha-discogs)](https://github.com/iamjoshk/ha-discogs/releases)
 
-This custom integration for Home Assistant provides enhanced monitoring of your Discogs collection, building upon the foundations of the existing official Discogs integration. Get insightful data on your collection's size, wantlist, and now, the estimated **minimum, median, and maximum market value** of your prized vinyl or CD collection!
+This integration brings your full Discogs collection into Home Assistant, expanding on the legacy core Discogs integration. It provides sensors for collection size, wantlist size, collection value, and a random record feature. It also includes an action that can fetch your entire collection and make it available for display using cards like flex-table-card or downloaded as a JSON file.
 
-### Why this Integration?
+## Features
 
-The official Home Assistant Discogs integration is fantastic for tracking your collection and wantlist counts, and even suggesting a random record. However, as a passionate collector, I wanted more granular insights into the monetary value of my collection, a feature not present in the legacy version.
+- Collection count sensor
+- Wantlist count sensor
+- Collection value sensors (minimum, median, maximum)
+- Random record sensor with details and artwork
+- Rate limit monitor
+- Action that returns collection data for use in dashboards
+- Support for flex-table-card integration
 
-This "Discogs Enhanced" integration was developed to address that need, adding:
+## Installation
 
-* **Collection Value (Minimum):** A sensor displaying the estimated minimum market value of your Discogs collection.
-* **Collection Value (Median):** A sensor displaying the estimated median market value of your Discogs collection.
-* **Collection Value (Maximum):** A sensor displaying the estimated maximum market value of your Discogs collection.
-* Dynamic currency detection based on Discogs' provided values.
+### HACS Installation (Recommended)
 
-This project stands on the shoulders of giants. It is heavily based on and inspired by the [official Home Assistant Discogs integration](https://www.home-assistant.io/integrations/discogs) originally developed by the talented **[@thibmaek](https://github.com/thibmaek)**. My contribution extends its capabilities by adding the detailed collection valuation sensors.
+1. Make sure you have [HACS](https://hacs.xyz/) installed
+2. Add this repository as a custom repository in HACS:
+   - Go to HACS in Home Assistant
+   - Click the three dots in the upper right corner
+   - Select "Custom repositories"
+   - Add `https://github.com/iamjoshk/ha-discogs` with category "Integration"
+3. Click "Add"
+4. Then download the add-on
+5. Restart Home Assistant
 
-**A Note on Development:** As someone without extensive development experience, this integration was brought to life with significant assistance from advanced AI models, which helped in understanding Home Assistant's architecture, refactoring the code, and implementing new features. This is a testament to the power of collaborative development, even when one collaborator is artificial intelligence!
+### Manual Installation
 
-### Installation
+1. Download the latest release from the [releases page](https://github.com/iamjoshk/ha-discogs/releases)
+2. Unpack the release and copy the `custom_components/ha_discogs` directory into your Home Assistant's `custom_components` directory
+3. Restart Home Assistant
 
-This integration is available through HACS (Home Assistant Community Store).
+## Configuration
 
-1.  **Add this repository to HACS:**
-    * Open HACS in your Home Assistant instance.
-    * Go to **Integrations**.
-    * Click the **three dots** in the top right corner and select "**Custom repositories**".
-    * Enter the URL: `https://github.com/andreasc1/homeassistant-discogs-enhanced`
-    * Select "Category": `Integration`.
-    * Click "**ADD**".
-2.  **Install the integration:**
-    * Navigate back to the HACS **Integrations** tab.
-    * Search for "Discogs Enhanced Integration".
-    * Click "**Download**" and select the latest version.
-3.  **Restart Home Assistant.**
+### Integration Setup
 
-### Configuration
+1. In Home Assistant, go to **Settings** > **Integrations**
+2. Click the **+ ADD INTEGRATION** button
+3. Search for "HA Discogs" and select it
+4. Enter your Discogs API token
+   - You can get your token from your [Discogs Developer Settings](https://www.discogs.com/settings/developers)
+5. Click "Submit"
 
-To enable the Discogs Enhanced sensor, add the following to your `configuration.yaml` file:
+### API Token
 
-```yaml
-# Example configuration.yaml entry
-sensor:
-  - platform: discogs_enhanced
-    token: YOUR_DISCOGS_API_TOKEN
-    name: My Discogs Collection # Optional, defaults to "Discogs"
-    monitored_conditions:
-      - collection
-      - wantlist
-      - random_record
-      - collection_value_min
-      - collection_value_median
-      - collection_value_max
+To get your Discogs API token:
+
+1. Log in to your Discogs account
+2. Go to [Settings > Developers](https://www.discogs.com/settings/developers)
+3. Generate a personal access token
+4. Copy the token and use it during integration setup
+
+## Available Actions
+
+### Download Collection Action
+
+This action fetches your complete Discogs collection and can optionally save it to a JSON file.
+
+Parameters:
+- `path` (optional): Path to save the collection file (default: `discogs_collection.json` in config folder)
+- `download` (optional): Whether to save to file (default: `false`)
+
+Returns:
+- Your complete collection data
+
+## Using with flex-table-card
+
+The `download_collection` action can be used to populate a [flex-table-card](https://github.com/custom-cards/flex-table-card) to display your entire collection. First, install the flex-table-card from HACS.
+
+### Example flex-table-card Configuration
+
+```
+type: custom:flex-table-card
+title: My Discogs Collection
+search: true
+action: ha_discogs.download_collection
+entities:
+  include: sensor.my_full_collection
+sort_by:
+  - Artists
+  - Year
+columns:
+  - name: Cover
+    data: collection.thumb
+    modify: "x ? `<img src=\"${x}\" style=\"height:50px;\"/>` : \"\""
+    align: center
+  - name: Artists
+    data: collection.artists
+    modify: x.map(a => a.name.replace(/^The /, "")).join(", ")
+  - data: collection.title
+    name: Title
+  - data: collection.year
+    name: Year
+  - name: Format
+    data: collection.formats
+    modify: "x && x.length > 0 ? x[0].name : \"\""
+  - name: Genre
+    data: collection.genres
+  - name: Styles
+    data: collection.styles
 ```
 
-### Sensors
+## Notes
 
-This integration provides the following sensors:
+- The integration tries to respect Discogs' rate limits by adding delays between API calls (60 requests per minute for authenticated calls). Sensors will update every 90 seconds automatically.
+- When using the download service with large collections, it may take some time to complete.
+- A binary sensor is created to monitor rate limit status. 
 
-* **`sensor.discogs_enhanced_collection`**: Displays the total number of records in your collection.
-* **`sensor.discogs_enhanced_wantlist`**: Displays the total number of items in your wantlist.
-* **`sensor.discogs_enhanced_random_record`**: Suggests a random record from your collection with attributes like artist, title, label, and cover image.
-* **`sensor.discogs_enhanced_collection_value_min`**: Displays the estimated minimum value of your collection (currency symbol set dynamically).
-* **`sensor.discogs_enhanced_collection_value_median`**: Displays the estimated median value of your collection (currency symbol set dynamically).
-* **`sensor.discogs_enhanced_collection_value_max`**: Displays the estimated maximum value of your collection (currency symbol set dynamically).
+## Troubleshooting
 
-### Support & Contributions
+- If you see "Rate limit exceeded" warnings, wait 60 seconds before making another request
+- The rate limit binary sensor will show "Problem" when rate limits are exceeded and includes information about remaining limits in the attributes.
+- Make sure your Discogs token has the proper permissions
 
-If you encounter any issues or have suggestions for improvements, please open an issue on the [GitHub Issue Tracker](https://github.com/andreasc1/homeassistant-discogs-enhanced/issues).
+## Credits and Inspiration
 
-Contributions are welcome! Feel free to fork the repository and submit pull requests.
+- [Discogs API Documentation](https://www.discogs.com/developers)
+- [Core Discogs integration](https://github.com/home-assistant/core/tree/dev/homeassistant/components/discogs)
+- [discogs-enhanced by @andreasc1](https://andreasc1/homeassistant-discogs-enhanced)
+- [Wine-Cellar by @EdLeckert](https://github.com/EdLeckert/wine-cellar)
+- [flex-table-card by @daringer](https://github.com/custom-cards/flex-table-card)
