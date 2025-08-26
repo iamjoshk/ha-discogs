@@ -122,13 +122,19 @@ async def async_register_services(hass: HomeAssistant, username: str, token: str
             _LOGGER.error("Cannot download collection, Discogs username is unknown.")
             return None
 
+        # Get whether to download the file (defaults to false)
+        should_download = call.data.get("download", False)
         file_path = call.data.get("path", hass.config.path("discogs_collection.json"))
-        _LOGGER.info("Starting Discogs collection download to %s", file_path)
+        
+        if should_download:
+            _LOGGER.info("Starting Discogs collection download to %s", file_path)
+        else:
+            _LOGGER.info("Fetching Discogs collection data (no file download)")
         
         # Get coordinator to update rate limit info
         coordinator = None
         for entry_id, coord in hass.data.get(DOMAIN, {}).items():
-            if hasattr(coord, 'update_rate_limit_data'):  # Verify it's the coordinator
+            if hasattr(coord, 'update_rate_limit_data'):
                 coordinator = coord
                 break
         
@@ -141,8 +147,12 @@ async def async_register_services(hass: HomeAssistant, username: str, token: str
             await coordinator.async_request_refresh()
         
         if collection_data:
-            await hass.async_add_executor_job(save_json, file_path, collection_data)
-            # If called with a response (from the UI, REST, or automations), return the collection in the response
+            # Only save to file if download flag is true
+            if should_download:
+                await hass.async_add_executor_job(save_json, file_path, collection_data)
+                _LOGGER.info("Saved %d releases to %s", len(collection_data), file_path)
+            
+            # Always return the collection data in the response
             if call.return_response:
                 return {"collection": collection_data}
 
@@ -152,5 +162,5 @@ async def async_register_services(hass: HomeAssistant, username: str, token: str
         DOMAIN,
         "download_collection",
         download_collection_service,
-        supports_response=SupportsResponse.ONLY,  # Add support for responses
+        supports_response=SupportsResponse.ONLY,
     )

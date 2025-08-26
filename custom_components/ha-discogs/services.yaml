@@ -1,10 +1,16 @@
 download_collection:
   name: Download Collection
-  description: "Downloads your full Discogs collection data to a JSON file."
+  description: "Downloads your full Discogs collection data and optionally saves it to a JSON file."
   fields:
     path:
       name: Path
-      description: "The path to save the exported JSON file."
+      description: "The path to save the exported JSON file (only used if download is true)."
       example: "/config/discogs_collection.json"
       selector:
         text:
+    download:
+      name: Download File
+      description: "Whether to save the collection to a file (defaults to false)."
+      default: false
+      selector:
+        boolean:
