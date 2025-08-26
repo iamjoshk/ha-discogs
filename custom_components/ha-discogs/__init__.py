@@ -1,4 +1,4 @@
-"""The Discogs custom integration."""
+"""The Discogs integration."""
 import logging
 import discogs_client
 
@@ -11,7 +11,7 @@ from .coordinator import DiscogsCoordinator
 from .services import async_register_services
 
 _LOGGER = logging.getLogger(__name__)
-PLATFORMS = [Platform.SENSOR]
+PLATFORMS = [Platform.SENSOR, Platform.BINARY_SENSOR]
 
 
 async def async_setup_entry(hass: HomeAssistant, entry):

@@ -3,6 +3,7 @@ import asyncio
 import logging
 import random
 import re
+import time
 from datetime import timedelta
 
 import discogs_client
@@ -33,6 +34,18 @@ class DiscogsCoordinator(DataUpdateCoordinator):
         self.name = entry.data.get(CONF_NAME, DEFAULT_NAME)
         self.config_entry = entry
         self._client = discogs_client.Client(SERVER_SOFTWARE, user_token=self.token)
+        self._rate_limit_data = {
+            "total": 60,       # Default for authenticated requests
+            "used": 0,
+            "remaining": 60,
+            "exceeded": False,
+            "last_updated": None
+        }
+
+    @property
+    def rate_limit_data(self):
+        """Return current rate limit data."""
+        return self._rate_limit_data
 
     async def _async_update_data(self):
         """Fetch data from Discogs."""
@@ -55,8 +68,15 @@ class DiscogsCoordinator(DataUpdateCoordinator):
             # Process the data
             data.update(api_data)
 
+            # Reset rate limit exceeded flag if we successfully fetched data
+            self._rate_limit_data["exceeded"] = False
+
         except Exception as err:
             _LOGGER.exception("Error updating Discogs data: %s", err)
+            # Check if error is due to rate limiting
+            if "429" in str(err) or "Too Many Requests" in str(err):
+                self._rate_limit_data["exceeded"] = True
+                self._rate_limit_data["remaining"] = 0
 
         return data
 
@@ -126,6 +146,23 @@ class DiscogsCoordinator(DataUpdateCoordinator):
                 data["random_record_title"] = f"{artist_name} - {title}"
         except Exception as err:
             _LOGGER.error("Failed to fetch random record: %s", err)
+
+        # Update rate limit info from headers
+        if "X-Discogs-Ratelimit" in response.headers:
+            self._rate_limit_data["total"] = int(response.headers["X-Discogs-Ratelimit"])
+        if "X-Discogs-Ratelimit-Used" in response.headers:
+            self._rate_limit_data["used"] = int(response.headers["X-Discogs-Ratelimit-Used"])
+        if "X-Discogs-Ratelimit-Remaining" in response.headers:
+            self._rate_limit_data["remaining"] = int(response.headers["X-Discogs-Ratelimit-Remaining"])
+        
+        self._rate_limit_data["last_updated"] = time.time()
+                
+        # Handle rate limiting response (429)
+        if response.status_code == 429:
+            self._rate_limit_data["exceeded"] = True
+            self._rate_limit_data["remaining"] = 0
+            retry_after = int(response.headers.get("Retry-After", 60))
+            time.sleep(retry_after)
 
         return data
 
