@@ -57,6 +57,10 @@ To get your Discogs API token:
 
 ## Available Actions
 
+Note: the data returned even for small collections will exceed the limit (65535 characters) of entity attributes, so the action responses are returned as responses only with an option to download the response as a JSON file.
+
+The response can be used as a variable in a script or automation.
+
 ### Download Collection Action - ha_discogs.download_collection
 
 This action fetches your complete Discogs collection and can optionally save it to a JSON file.
@@ -67,6 +71,7 @@ Parameters:
 
 Returns:
 - Your complete collection data
+
 
 ### Download Wantlist Action - ha_discogs.download_wantlist
 
@@ -81,17 +86,67 @@ Returns:
 
 ## Using with flex-table-card
 
-The `download_collection` action can be used to populate a [flex-table-card](https://github.com/custom-cards/flex-table-card) to display your entire collection. First, install the flex-table-card from HACS.
+The `download_collection` and `download_wantlist` actions can be used to populate a [flex-table-card](https://github.com/custom-cards/flex-table-card) to display your entire collection or wantlist. First, install the flex-table-card from HACS.
+
+You can run the action directly in the card OR as a script in the card. Note the empty `entities`. This is required.
 
 ### Example flex-table-card Configuration
 
+As an action directly:
 ```
 type: custom:flex-table-card
 title: My Discogs Collection
 search: true
 action: ha_discogs.download_collection
-entities:
-  include: sensor.my_full_collection
+entities: []
+sort_by:
+  - Artists
+  - Year
+columns:
+  - name: Cover
+    data: collection.thumb
+    modify: "x ? `<img src=\"${x}\" style=\"height:50px;\"/>` : \"\""
+    align: center
+  - name: Artists
+    data: collection.artists
+    modify: x.map(a => a.name.replace(/^The /, "")).join(", ")
+  - data: collection.title
+    name: Title
+  - data: collection.year
+    name: Year
+  - name: Format
+    data: collection.formats
+    modify: "x && x.length > 0 ? x[0].name : \"\""
+  - name: Genre
+    data: collection.genres
+  - name: Styles
+    data: collection.styles
+```
+
+As a script:
+
+Script:
+```
+sequence:
+  - action: ha_discogs.download_wantlist
+    data: {}
+    response_variable: discogs
+  - variables:
+      wantlist: |
+        {{ discogs }}
+  - stop: all done
+    response_variable: discogs
+alias: Discogs Download Wantlist
+description: ""
+```
+
+and flex-table-card:
+```
+type: custom:flex-table-card
+title: My Discogs Collection
+search: true
+action: script.discogs_download_collection
+entities: []
 sort_by:
   - Artists
   - Year
@@ -128,7 +183,7 @@ columns:
 - If you see "Rate limit exceeded" warnings, wait 60 seconds before making another request
 - The rate limit binary sensor will show "Problem" when rate limits are exceeded and includes information about remaining limits in the attributes.
 - Make sure your Discogs token has the proper permissions
-- Setting up flex-table-card can hit the rate limit quickly.
+- Editing flex-table-card calls the action repeatedly, so the data may not load until you save, wait 30+ seconds, and then refresh the browswer.
 
 ## Credits and Inspiration
 
