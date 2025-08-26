@@ -15,7 +15,7 @@ from homeassistant.const import CONF_TOKEN, CONF_NAME
 from .const import DOMAIN, DEFAULT_NAME, USER_AGENT
 
 _LOGGER = logging.getLogger(__name__)
-UPDATE_INTERVAL = timedelta(seconds=90)  # Changed from 30 minutes to 90 seconds
+UPDATE_INTERVAL = timedelta(minutes=5)  # Changed from 90 seconds to 5 minutes
 
 class DiscogsCoordinator(DataUpdateCoordinator):
     """Coordinator to fetch Discogs data."""

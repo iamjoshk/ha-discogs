@@ -2,6 +2,8 @@
 import logging
 import requests
 import time
+import threading
+from datetime import datetime, timedelta
 
 from homeassistant.core import HomeAssistant, ServiceCall, SupportsResponse
 from homeassistant.helpers.json import save_json
@@ -10,6 +12,14 @@ from homeassistant.helpers.update_coordinator import DataUpdateCoordinator
 from .const import DOMAIN, USER_AGENT
 
 _LOGGER = logging.getLogger(__name__)
+
+# Lock and timestamp to prevent multiple simultaneous calls
+_SERVICE_LOCK = threading.Lock()
+_LAST_SERVICE_CALL = {
+    "collection": datetime.min,
+    "wantlist": datetime.min
+}
+_MIN_SERVICE_INTERVAL = timedelta(seconds=30)
 
 
 def get_full_discogs_collection(username: str, token: str, coordinator=None) -> list:
@@ -26,8 +36,7 @@ def get_full_discogs_collection(username: str, token: str, coordinator=None) -> 
     per_page = 100
     
     # Rate limiting variables
-    requests_remaining = 60  # Default to max authenticated requests
-    min_wait_time = 5.0     # Minimum 5 seconds between requests to avoid rate limits
+    min_wait_time = 5.0     # Minimum 5 seconds between requests
     max_retries = 3         # Maximum number of retries for a request
     last_request_time = 0   # Track time of last request
     
@@ -59,10 +68,8 @@ def get_full_discogs_collection(username: str, token: str, coordinator=None) -> 
                 
                 # Handle rate limiting response (429)
                 if resp.status_code == 429:
-                    # Coordinator rate limit data is already updated above
                     retry_count += 1
-                    # Always wait 60 seconds when rate limited (Discogs rate limit window)
-                    wait_time = 60
+                    wait_time = 60  # Always wait 60 seconds for rate limits
                     _LOGGER.warning("Rate limit exceeded. Waiting %d seconds before retry %d/%d", 
                                    wait_time, retry_count, max_retries)
                     time.sleep(wait_time)
@@ -93,7 +100,7 @@ def get_full_discogs_collection(username: str, token: str, coordinator=None) -> 
         releases.extend(release.get("basic_information", {}) for release in page_releases)
         pagination = data.get("pagination", {})
         
-        # Log progress
+        # Log progress only at debug level
         _LOGGER.debug("Fetched page %d/%d with %d releases (total: %d)", 
                      page, pagination.get("pages", 1), len(page_releases), len(releases))
         
@@ -102,12 +109,6 @@ def get_full_discogs_collection(username: str, token: str, coordinator=None) -> 
             break
             
         page += 1
-        
-        # If we're getting low on remaining requests, wait longer
-        if requests_remaining < 10:
-            _LOGGER.info("Rate limit running low (%d remaining). Adding delay between requests.", 
-                        requests_remaining)
-            min_wait_time = 10.0  # Slow down even more when getting close to limit
 
     _LOGGER.info("Fetched a total of %d releases from Discogs collection.", len(releases))
     return releases
@@ -127,8 +128,7 @@ def get_full_discogs_wantlist(username: str, token: str, coordinator=None) -> li
     per_page = 100
     
     # Rate limiting variables
-    requests_remaining = 60  # Default to max authenticated requests
-    min_wait_time = 5.0     # Minimum 5 seconds between requests to avoid rate limits
+    min_wait_time = 5.0     # Minimum 5 seconds between requests
     max_retries = 3         # Maximum number of retries for a request
     last_request_time = 0   # Track time of last request
     
@@ -160,10 +160,8 @@ def get_full_discogs_wantlist(username: str, token: str, coordinator=None) -> li
                 
                 # Handle rate limiting response (429)
                 if resp.status_code == 429:
-                    # Coordinator rate limit data is already updated above
                     retry_count += 1
-                    # Always wait 60 seconds when rate limited (Discogs rate limit window)
-                    wait_time = 60
+                    wait_time = 60  # Always wait 60 seconds for rate limits
                     _LOGGER.warning("Rate limit exceeded. Waiting %d seconds before retry %d/%d", 
                                    wait_time, retry_count, max_retries)
                     time.sleep(wait_time)
@@ -194,7 +192,7 @@ def get_full_discogs_wantlist(username: str, token: str, coordinator=None) -> li
         wants.extend(want.get("basic_information", {}) for want in page_wants)
         pagination = data.get("pagination", {})
         
-        # Log progress
+        # Log progress only at debug level
         _LOGGER.debug("Fetched page %d/%d with %d wants (total: %d)", 
                      page, pagination.get("pages", 1), len(page_wants), len(wants))
         
@@ -203,12 +201,6 @@ def get_full_discogs_wantlist(username: str, token: str, coordinator=None) -> li
             break
             
         page += 1
-        
-        # If we're getting low on remaining requests, wait longer
-        if requests_remaining < 10:
-            _LOGGER.info("Rate limit running low (%d remaining). Adding delay between requests.", 
-                        requests_remaining)
-            min_wait_time = 10.0  # Slow down even more when getting close to limit
 
     _LOGGER.info("Fetched a total of %d wants from Discogs wantlist.", len(wants))
     return wants
@@ -219,87 +211,123 @@ async def async_register_services(hass: HomeAssistant, username: str, token: str
 
     async def download_collection_service(call: ServiceCall) -> dict | None:
         """Handle the service call to download the collection."""
-        if not username:
-            _LOGGER.error("Cannot download collection, Discogs username is unknown.")
-            return None
-
-        # Get whether to download the file (defaults to false)
-        should_download = call.data.get("download", False)
-        file_path = call.data.get("path", hass.config.path("discogs_collection.json"))
+        # Check if we should throttle this call
+        now = datetime.now()
+        if now - _LAST_SERVICE_CALL["collection"] < _MIN_SERVICE_INTERVAL:
+            time_to_wait = (_LAST_SERVICE_CALL["collection"] + _MIN_SERVICE_INTERVAL - now).total_seconds()
+            _LOGGER.warning("Collection service called too frequently. Please wait at least %d seconds between calls.", 
+                          _MIN_SERVICE_INTERVAL.total_seconds())
+            return {"error": f"Service called too frequently. Try again in {time_to_wait:.1f} seconds."}
         
-        if should_download:
-            _LOGGER.info("Starting Discogs collection download to %s", file_path)
-        else:
-            _LOGGER.info("Fetching Discogs collection data (no file download)")
-        
-        # Get coordinator to update rate limit info
-        coordinator = None
-        for entry_id, coord in hass.data.get(DOMAIN, {}).items():
-            if hasattr(coord, 'update_rate_limit_data'):
-                coordinator = coord
-                break
-        
-        collection_data = await hass.async_add_executor_job(
-            get_full_discogs_collection, username, token, coordinator
-        )
-        
-        # Force update binary sensor state after collection download
-        if coordinator:
-            await coordinator.async_request_refresh()
-        
-        if collection_data:
-            # Only save to file if download flag is true
-            if should_download:
-                await hass.async_add_executor_job(save_json, file_path, collection_data)
-                _LOGGER.info("Saved %d releases to %s", len(collection_data), file_path)
+        # Try to acquire the lock to prevent multiple simultaneous calls
+        if not _SERVICE_LOCK.acquire(blocking=False):
+            _LOGGER.warning("Service is already running, please wait for it to complete")
+            return {"error": "Service is already running"}
             
-            # Always return the collection data in the response
-            if call.return_response:
-                return {"collection": collection_data}
+        try:
+            _LAST_SERVICE_CALL["collection"] = now
+            
+            if not username:
+                _LOGGER.error("Cannot download collection, Discogs username is unknown.")
+                return None
 
-        return None
+            # Get whether to download the file (defaults to false)
+            should_download = call.data.get("download", False)
+            file_path = call.data.get("path", hass.config.path("discogs_collection.json"))
+            
+            if should_download:
+                _LOGGER.info("Starting Discogs collection download to %s", file_path)
+            else:
+                _LOGGER.info("Fetching Discogs collection data")
+            
+            # Get coordinator to update rate limit info
+            coordinator = None
+            for entry_id, coord in hass.data.get(DOMAIN, {}).items():
+                if hasattr(coord, 'update_rate_limit_data'):
+                    coordinator = coord
+                    break
+            
+            collection_data = await hass.async_add_executor_job(
+                get_full_discogs_collection, username, token, coordinator
+            )
+            
+            # Force update binary sensor state after collection download
+            if coordinator:
+                await coordinator.async_request_refresh()
+            
+            if collection_data:
+                # Only save to file if download flag is true
+                if should_download:
+                    await hass.async_add_executor_job(save_json, file_path, collection_data)
+                    _LOGGER.info("Saved %d releases to %s", len(collection_data), file_path)
+                
+                # Always return the collection data in the response
+                if call.return_response:
+                    return {"collection": collection_data}
+
+            return None
+        finally:
+            _SERVICE_LOCK.release()
 
     async def download_wantlist_service(call: ServiceCall) -> dict | None:
         """Handle the service call to download the wantlist."""
-        if not username:
-            _LOGGER.error("Cannot download wantlist, Discogs username is unknown.")
-            return None
-
-        # Get whether to download the file (defaults to false)
-        should_download = call.data.get("download", False)
-        file_path = call.data.get("path", hass.config.path("discogs_wantlist.json"))
+        # Check if we should throttle this call
+        now = datetime.now()
+        if now - _LAST_SERVICE_CALL["wantlist"] < _MIN_SERVICE_INTERVAL:
+            time_to_wait = (_LAST_SERVICE_CALL["wantlist"] + _MIN_SERVICE_INTERVAL - now).total_seconds()
+            _LOGGER.warning("Wantlist service called too frequently. Please wait at least %d seconds between calls.", 
+                          _MIN_SERVICE_INTERVAL.total_seconds())
+            return {"error": f"Service called too frequently. Try again in {time_to_wait:.1f} seconds."}
         
-        if should_download:
-            _LOGGER.info("Starting Discogs wantlist download to %s", file_path)
-        else:
-            _LOGGER.info("Fetching Discogs wantlist data (no file download)")
-        
-        # Get coordinator to update rate limit info
-        coordinator = None
-        for entry_id, coord in hass.data.get(DOMAIN, {}).items():
-            if hasattr(coord, 'update_rate_limit_data'):
-                coordinator = coord
-                break
-        
-        wantlist_data = await hass.async_add_executor_job(
-            get_full_discogs_wantlist, username, token, coordinator
-        )
-        
-        # Force update binary sensor state after wantlist download
-        if coordinator:
-            await coordinator.async_request_refresh()
-        
-        if wantlist_data:
-            # Only save to file if download flag is true
-            if should_download:
-                await hass.async_add_executor_job(save_json, file_path, wantlist_data)
-                _LOGGER.info("Saved %d wants to %s", len(wantlist_data), file_path)
+        # Try to acquire the lock to prevent multiple simultaneous calls
+        if not _SERVICE_LOCK.acquire(blocking=False):
+            _LOGGER.warning("Service is already running, please wait for it to complete")
+            return {"error": "Service is already running"}
             
-            # Always return the wantlist data in the response
-            if call.return_response:
-                return {"wantlist": wantlist_data}
+        try:
+            _LAST_SERVICE_CALL["wantlist"] = now
+            
+            if not username:
+                _LOGGER.error("Cannot download wantlist, Discogs username is unknown.")
+                return None
 
-        return None
+            # Get whether to download the file (defaults to false)
+            should_download = call.data.get("download", False)
+            file_path = call.data.get("path", hass.config.path("discogs_wantlist.json"))
+            
+            if should_download:
+                _LOGGER.info("Starting Discogs wantlist download to %s", file_path)
+            else:
+                _LOGGER.info("Fetching Discogs wantlist data")
+            
+            # Get coordinator to update rate limit info
+            coordinator = None
+            for entry_id, coord in hass.data.get(DOMAIN, {}).items():
+                if hasattr(coord, 'update_rate_limit_data'):
+                    coordinator = coord
+                    break
+            
+            wantlist_data = await hass.async_add_executor_job(
+                get_full_discogs_wantlist, username, token, coordinator
+            )
+            
+            # Force update binary sensor state after wantlist download
+            if coordinator:
+                await coordinator.async_request_refresh()
+            
+            if wantlist_data:
+                # Only save to file if download flag is true
+                if should_download:
+                    await hass.async_add_executor_job(save_json, file_path, wantlist_data)
+                    _LOGGER.info("Saved %d wants to %s", len(wantlist_data), file_path)
+                
+                # Always return the wantlist data in the response
+                if call.return_response:
+                    return {"wantlist": wantlist_data}
+
+            return None
+        finally:
+            _SERVICE_LOCK.release()
 
     # Register both services
     hass.services.async_register(

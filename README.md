@@ -118,15 +118,17 @@ columns:
 
 ## Notes
 
-- The integration tries to respect [Discogs' API rate limits](https://www.discogs.com/developers/#page:home,header:home-rate-limiting) by adding delays between API calls (60 requests per minute for authenticated calls). Sensors will update every 90 seconds automatically.
+- The integration tries to respect [Discogs' API rate limits](https://www.discogs.com/developers/#page:home,header:home-rate-limiting) by adding delays between API calls (60 requests per minute for authenticated calls). Sensors will update every 5 minutes automatically.
 - When using the download service with large collections, it may take some time to complete.
 - A binary sensor is created to monitor rate limit status. 
+- The actions can only be called once every 30 seconds to try and reduce rate limit restrictions.
 
 ## Troubleshooting
 
 - If you see "Rate limit exceeded" warnings, wait 60 seconds before making another request
 - The rate limit binary sensor will show "Problem" when rate limits are exceeded and includes information about remaining limits in the attributes.
 - Make sure your Discogs token has the proper permissions
+- Setting up flex-table-card can hit the rate limit quickly.
 
 ## Credits and Inspiration
 
