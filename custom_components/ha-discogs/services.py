@@ -13,12 +13,17 @@ from .const import DOMAIN, USER_AGENT
 
 _LOGGER = logging.getLogger(__name__)
 
-# Lock and timestamp to prevent multiple simultaneous calls
-_SERVICE_LOCK = threading.Lock()
+# Separate locks and timestamps for each service
+_SERVICE_LOCKS = {
+    "collection": threading.Lock(),
+    "wantlist": threading.Lock()
+}
+
 _LAST_SERVICE_CALL = {
     "collection": datetime.min,
     "wantlist": datetime.min
 }
+
 _MIN_SERVICE_INTERVAL = timedelta(seconds=30)
 
 
@@ -211,7 +216,7 @@ async def async_register_services(hass: HomeAssistant, username: str, token: str
 
     async def download_collection_service(call: ServiceCall) -> dict | None:
         """Handle the service call to download the collection."""
-        # Check if we should throttle this call
+        # Check if we should throttle this call - specific to collection
         now = datetime.now()
         if now - _LAST_SERVICE_CALL["collection"] < _MIN_SERVICE_INTERVAL:
             time_to_wait = (_LAST_SERVICE_CALL["collection"] + _MIN_SERVICE_INTERVAL - now).total_seconds()
@@ -219,10 +224,10 @@ async def async_register_services(hass: HomeAssistant, username: str, token: str
                           _MIN_SERVICE_INTERVAL.total_seconds())
             return {"error": f"Service called too frequently. Try again in {time_to_wait:.1f} seconds."}
         
-        # Try to acquire the lock to prevent multiple simultaneous calls
-        if not _SERVICE_LOCK.acquire(blocking=False):
-            _LOGGER.warning("Service is already running, please wait for it to complete")
-            return {"error": "Service is already running"}
+        # Try to acquire the collection-specific lock
+        if not _SERVICE_LOCKS["collection"].acquire(blocking=False):
+            _LOGGER.warning("Collection service is already running, please wait for it to complete")
+            return {"error": "Collection service is already running"}
             
         try:
             _LAST_SERVICE_CALL["collection"] = now
@@ -267,11 +272,11 @@ async def async_register_services(hass: HomeAssistant, username: str, token: str
 
             return None
         finally:
-            _SERVICE_LOCK.release()
+            _SERVICE_LOCKS["collection"].release()
 
     async def download_wantlist_service(call: ServiceCall) -> dict | None:
         """Handle the service call to download the wantlist."""
-        # Check if we should throttle this call
+        # Check if we should throttle this call - specific to wantlist
         now = datetime.now()
         if now - _LAST_SERVICE_CALL["wantlist"] < _MIN_SERVICE_INTERVAL:
             time_to_wait = (_LAST_SERVICE_CALL["wantlist"] + _MIN_SERVICE_INTERVAL - now).total_seconds()
@@ -279,10 +284,10 @@ async def async_register_services(hass: HomeAssistant, username: str, token: str
                           _MIN_SERVICE_INTERVAL.total_seconds())
             return {"error": f"Service called too frequently. Try again in {time_to_wait:.1f} seconds."}
         
-        # Try to acquire the lock to prevent multiple simultaneous calls
-        if not _SERVICE_LOCK.acquire(blocking=False):
-            _LOGGER.warning("Service is already running, please wait for it to complete")
-            return {"error": "Service is already running"}
+        # Try to acquire the wantlist-specific lock
+        if not _SERVICE_LOCKS["wantlist"].acquire(blocking=False):
+            _LOGGER.warning("Wantlist service is already running, please wait for it to complete")
+            return {"error": "Wantlist service is already running"}
             
         try:
             _LAST_SERVICE_CALL["wantlist"] = now
@@ -327,7 +332,7 @@ async def async_register_services(hass: HomeAssistant, username: str, token: str
 
             return None
         finally:
-            _SERVICE_LOCK.release()
+            _SERVICE_LOCKS["wantlist"].release()
 
     # Register both services
     hass.services.async_register(
