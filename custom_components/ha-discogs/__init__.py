@@ -7,6 +7,7 @@ from homeassistant.core import HomeAssistant
 from homeassistant.helpers.aiohttp_client import SERVER_SOFTWARE
 
 from .const import DOMAIN, DEFAULT_NAME
+from .coordinator import DiscogsCoordinator
 from .services import async_register_services
 
 _LOGGER = logging.getLogger(__name__)
@@ -26,9 +27,11 @@ async def async_setup_entry(hass: HomeAssistant, entry):
         _LOGGER.error("Could not fetch Discogs username, collection download will not work: %s", err)
         username = None
 
-    hass.data.setdefault(DOMAIN, {})[entry.entry_id] = {
-        "identity": identity
-    }
+    # Create the coordinator
+    coordinator = DiscogsCoordinator(hass, entry)
+    await coordinator.async_config_entry_first_refresh()
+
+    hass.data.setdefault(DOMAIN, {})[entry.entry_id] = coordinator
 
     # Set up the sensor platform
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)

@@ -54,7 +54,7 @@ async def async_register_services(hass: HomeAssistant, username: str, token: str
             _LOGGER.error("Cannot download collection, Discogs username is unknown.")
             return
 
-        file_path = call.data.get("file_path", hass.config.path("discogs_collection.json"))
+        file_path = call.data.get("path", hass.config.path("discogs_collection.json"))
         _LOGGER.info("Starting Discogs collection download to %s", file_path)
         
         collection_data = await hass.async_add_executor_job(
