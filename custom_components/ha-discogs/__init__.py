@@ -1,4 +1,4 @@
-"""The Discogs integration."""
+"""The Discogs custom integration."""
 import logging
 import discogs_client
 
