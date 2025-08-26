@@ -174,7 +174,7 @@ columns:
 ## Notes
 
 - The integration tries to respect [Discogs' API rate limits](https://www.discogs.com/developers/#page:home,header:home-rate-limiting) by adding delays between API calls (60 requests per minute for authenticated calls). Sensors will update every 5 minutes automatically.
-- When using the download service with large collections, it may take some time to complete.
+- When using the download actions with large collections or wantlists, it may take some time to complete.
 - A binary sensor is created to monitor rate limit status. 
 - The actions can only be called once every 30 seconds to try and reduce rate limit restrictions.
 
