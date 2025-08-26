@@ -57,7 +57,7 @@ To get your Discogs API token:
 
 ## Available Actions
 
-### Download Collection Action
+### Download Collection Action - ha_discogs.download_collection
 
 This action fetches your complete Discogs collection and can optionally save it to a JSON file.
 
@@ -67,6 +67,17 @@ Parameters:
 
 Returns:
 - Your complete collection data
+
+### Download Wantlist Action - ha_discogs.download_wantlist
+
+This action fetches your complete Discogs wantlist and can optionally save it to a JSON file.
+
+Parameters:
+- `path` (optional): Path to save the collection file (default: `discogs_wantlist.json` in config folder)
+- `download` (optional): Whether to save to file (default: `false`)
+
+Returns:
+- Your complete wantlist data
 
 ## Using with flex-table-card
 
