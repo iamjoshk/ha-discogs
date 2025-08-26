@@ -1,5 +1,4 @@
 """Data coordinator for Discogs integration."""
-import asyncio
 import logging
 import random
 import re
@@ -12,7 +11,6 @@ import requests
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator
 from homeassistant.const import CONF_TOKEN, CONF_NAME
-from homeassistant.helpers.aiohttp_client import SERVER_SOFTWARE
 
 from .const import DOMAIN, DEFAULT_NAME, USER_AGENT
 
@@ -33,7 +31,7 @@ class DiscogsCoordinator(DataUpdateCoordinator):
         self.token = entry.data[CONF_TOKEN]
         self.name = entry.data.get(CONF_NAME, DEFAULT_NAME)
         self.config_entry = entry
-        self._client = discogs_client.Client(SERVER_SOFTWARE, user_token=self.token)
+        self._client = discogs_client.Client(USER_AGENT, user_token=self.token)
         self._rate_limit_data = {
             "total": 60,       # Default for authenticated requests
             "used": 0,
@@ -46,6 +44,22 @@ class DiscogsCoordinator(DataUpdateCoordinator):
     def rate_limit_data(self):
         """Return current rate limit data."""
         return self._rate_limit_data
+
+    def update_rate_limit_data(self, headers, status_code=None):
+        """Update rate limit data from response headers."""
+        if "X-Discogs-Ratelimit" in headers:
+            self._rate_limit_data["total"] = int(headers["X-Discogs-Ratelimit"])
+        if "X-Discogs-Ratelimit-Used" in headers:
+            self._rate_limit_data["used"] = int(headers["X-Discogs-Ratelimit-Used"])
+        if "X-Discogs-Ratelimit-Remaining" in headers:
+            self._rate_limit_data["remaining"] = int(headers["X-Discogs-Ratelimit-Remaining"])
+        
+        self._rate_limit_data["last_updated"] = time.time()
+        
+        # Set exceeded flag if we got a 429 response
+        if status_code == 429:
+            self._rate_limit_data["exceeded"] = True
+            self._rate_limit_data["remaining"] = 0
 
     async def _async_update_data(self):
         """Fetch data from Discogs."""
@@ -84,27 +98,46 @@ class DiscogsCoordinator(DataUpdateCoordinator):
         """Fetch all Discogs data synchronously (run in executor)."""
         data = {}
         
+        # Implement rate limiting
+        if self._rate_limit_data.get("last_updated") is not None:
+            time_since_last = time.time() - self._rate_limit_data.get("last_updated")
+            if time_since_last < 5.0:  # Same 5s limit as in services.py
+                _LOGGER.debug("Rate limiting: Waiting %.2f seconds", 5.0 - time_since_last)
+                time.sleep(5.0 - time_since_last)
+        
         # Fetch identity data
-        identity = self._client.identity()
-        data["user"] = identity.username
-        data["collection_count"] = identity.num_collection
-        data["wantlist_count"] = identity.num_wantlist
+        try:
+            identity = self._client.identity()
+            data["user"] = identity.username
+            data["collection_count"] = identity.num_collection
+            data["wantlist_count"] = identity.num_wantlist
 
-        # Fetch currency symbol
-        if hasattr(identity, 'curr_abbr') and identity.curr_abbr:
-            data["currency_symbol"] = identity.curr_abbr
-        elif hasattr(identity, 'data') and 'curr_abbr' in identity.data:
-            data["currency_symbol"] = identity.data['curr_abbr']
+            # Fetch currency symbol
+            if hasattr(identity, 'curr_abbr') and identity.curr_abbr:
+                data["currency_symbol"] = identity.curr_abbr
+            elif hasattr(identity, 'data') and 'curr_abbr' in identity.data:
+                data["currency_symbol"] = identity.data['curr_abbr']
+        except Exception as err:
+            _LOGGER.error("Failed to fetch user identity: %s", err)
+            return data
 
         # Fetch collection value
-        headers = {
-            "User-Agent": USER_AGENT,
-            "Authorization": f"Discogs token={self.token}"
-        }
-        url = f"https://api.discogs.com/users/{identity.username}/collection/value"
-        
         try:
+            headers = {
+                "User-Agent": USER_AGENT,
+                "Authorization": f"Discogs token={self.token}"
+            }
+            url = f"https://api.discogs.com/users/{identity.username}/collection/value"
+            
             response = requests.get(url, headers=headers, timeout=10)
+            
+            # Update rate limit info
+            self.update_rate_limit_data(response.headers, response.status_code)
+            
+            if response.status_code == 429:
+                _LOGGER.warning("Rate limit exceeded while fetching collection value")
+                return data
+                
             response.raise_for_status()
             value_data = response.json()
             
@@ -146,23 +179,6 @@ class DiscogsCoordinator(DataUpdateCoordinator):
                 data["random_record_title"] = f"{artist_name} - {title}"
         except Exception as err:
             _LOGGER.error("Failed to fetch random record: %s", err)
-
-        # Update rate limit info from headers
-        if "X-Discogs-Ratelimit" in response.headers:
-            self._rate_limit_data["total"] = int(response.headers["X-Discogs-Ratelimit"])
-        if "X-Discogs-Ratelimit-Used" in response.headers:
-            self._rate_limit_data["used"] = int(response.headers["X-Discogs-Ratelimit-Used"])
-        if "X-Discogs-Ratelimit-Remaining" in response.headers:
-            self._rate_limit_data["remaining"] = int(response.headers["X-Discogs-Ratelimit-Remaining"])
-        
-        self._rate_limit_data["last_updated"] = time.time()
-                
-        # Handle rate limiting response (429)
-        if response.status_code == 429:
-            self._rate_limit_data["exceeded"] = True
-            self._rate_limit_data["remaining"] = 0
-            retry_after = int(response.headers.get("Retry-After", 60))
-            time.sleep(retry_after)
 
         return data
 

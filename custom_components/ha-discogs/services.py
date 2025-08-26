@@ -54,21 +54,15 @@ def get_full_discogs_collection(username: str, token: str, coordinator=None) -> 
                 resp = requests.get(url, headers=headers, params=params, timeout=15)
                 
                 # Update rate limit info from headers
-                if coordinator and "X-Discogs-Ratelimit" in resp.headers:
-                    coordinator._rate_limit_data["total"] = int(resp.headers["X-Discogs-Ratelimit"])
-                    if "X-Discogs-Ratelimit-Used" in resp.headers:
-                        coordinator._rate_limit_data["used"] = int(resp.headers["X-Discogs-Ratelimit-Used"])
-                    if "X-Discogs-Ratelimit-Remaining" in resp.headers:
-                        coordinator._rate_limit_data["remaining"] = int(resp.headers["X-Discogs-Ratelimit-Remaining"])
-                    coordinator._rate_limit_data["last_updated"] = time.time()
+                if coordinator:
+                    coordinator.update_rate_limit_data(resp.headers, resp.status_code)
                 
                 # Handle rate limiting response (429)
                 if resp.status_code == 429:
-                    if coordinator:
-                        coordinator._rate_limit_data["exceeded"] = True
-                        coordinator._rate_limit_data["remaining"] = 0
+                    # Coordinator rate limit data is already updated above
                     retry_count += 1
-                    wait_time = min(60, 5 * (2 ** retry_count))  # Exponential backoff
+                    # Always wait 60 seconds when rate limited (Discogs rate limit window)
+                    wait_time = 60
                     _LOGGER.warning("Rate limit exceeded. Waiting %d seconds before retry %d/%d", 
                                    wait_time, retry_count, max_retries)
                     time.sleep(wait_time)
@@ -133,14 +127,18 @@ async def async_register_services(hass: HomeAssistant, username: str, token: str
         
         # Get coordinator to update rate limit info
         coordinator = None
-        for entry_id, entry_data in hass.data.get(DOMAIN, {}).items():
-            if isinstance(entry_data, DataUpdateCoordinator):
-                coordinator = entry_data
+        for entry_id, coord in hass.data.get(DOMAIN, {}).items():
+            if hasattr(coord, 'update_rate_limit_data'):  # Verify it's the coordinator
+                coordinator = coord
                 break
         
         collection_data = await hass.async_add_executor_job(
             get_full_discogs_collection, username, token, coordinator
         )
+        
+        # Force update binary sensor state after collection download
+        if coordinator:
+            await coordinator.async_request_refresh()
         
         if collection_data:
             await hass.async_add_executor_job(save_json, file_path, collection_data)
