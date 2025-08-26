@@ -85,7 +85,6 @@ The `download_collection` action can be used to populate a [flex-table-card](htt
 
 ### Example flex-table-card Configuration
 
->>>>>>> d107785c602d004ac115427a6be5370c92d99692
 ```
 type: custom:flex-table-card
 title: My Discogs Collection
@@ -119,7 +118,7 @@ columns:
 
 ## Notes
 
-- The integration tries to respect Discogs' rate limits by adding delays between API calls (60 requests per minute for authenticated calls). Sensors will update every 90 seconds automatically.
+- The integration tries to respect [Discogs' API rate limits](https://www.discogs.com/developers/#page:home,header:home-rate-limiting) by adding delays between API calls (60 requests per minute for authenticated calls). Sensors will update every 90 seconds automatically.
 - When using the download service with large collections, it may take some time to complete.
 - A binary sensor is created to monitor rate limit status. 
 
