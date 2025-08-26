@@ -49,40 +49,65 @@ class DiscogsCoordinator(DataUpdateCoordinator):
         }
 
         try:
-            # Fetch identity data
-            identity = await self.hass.async_add_executor_job(self._client.identity)
-            data["user"] = identity.username
-            data["collection_count"] = identity.num_collection
-            data["wantlist_count"] = identity.num_wantlist
-
-            # Fetch currency symbol
-            if hasattr(identity, 'curr_abbr') and identity.curr_abbr:
-                data["currency_symbol"] = identity.curr_abbr
-            elif hasattr(identity, 'data') and 'curr_abbr' in identity.data:
-                data["currency_symbol"] = identity.data['curr_abbr']
-
-            # Fetch collection value
-            headers = {
-                "User-Agent": SERVER_SOFTWARE,
-                "Authorization": f"Discogs token={self.token}"
-            }
-            url = f"https://api.discogs.com/users/{identity.username}/collection/value"
+            # Run all API calls in executor to avoid blocking calls
+            api_data = await self.hass.async_add_executor_job(self._fetch_discogs_data)
             
-            value_data = await self.hass.async_add_executor_job(
-                lambda: requests.get(url, headers=headers).json()
-            )
+            # Process the data
+            data.update(api_data)
+
+        except Exception as err:
+            _LOGGER.exception("Error updating Discogs data: %s", err)
+
+        return data
+
+    def _fetch_discogs_data(self):
+        """Fetch all Discogs data synchronously (run in executor)."""
+        data = {}
+        
+        # Fetch identity data
+        identity = self._client.identity()
+        data["user"] = identity.username
+        data["collection_count"] = identity.num_collection
+        data["wantlist_count"] = identity.num_wantlist
+
+        # Fetch currency symbol
+        if hasattr(identity, 'curr_abbr') and identity.curr_abbr:
+            data["currency_symbol"] = identity.curr_abbr
+        elif hasattr(identity, 'data') and 'curr_abbr' in identity.data:
+            data["currency_symbol"] = identity.data['curr_abbr']
+
+        # Fetch collection value
+        headers = {
+            "User-Agent": SERVER_SOFTWARE,
+            "Authorization": f"Discogs token={self.token}"
+        }
+        url = f"https://api.discogs.com/users/{identity.username}/collection/value"
+        
+        try:
+            response = requests.get(url, headers=headers, timeout=10)
+            response.raise_for_status()
+            value_data = response.json()
             
             # Clean and convert values
-            for key in ["minimum", "median", "maximum"]:
+            for key, data_key in [
+                ("minimum", "collection_value_min"),
+                ("median", "collection_value_median"),
+                ("maximum", "collection_value_max")
+            ]:
                 value_str = value_data.get(key, "0.00")
                 if isinstance(value_str, str):
                     numeric_value_str = re.sub(r'[^\d.]', '', value_str.replace(',', ''))
                     try:
-                        data[f"collection_value_{key}"] = float(numeric_value_str)
+                        data[data_key] = float(numeric_value_str)
                     except ValueError:
-                        pass
+                        data[data_key] = 0.0
+                else:
+                    data[data_key] = 0.0
+        except Exception as err:
+            _LOGGER.error("Failed to fetch collection value: %s", err)
 
-            # Get random record
+        # Get random record
+        try:
             if identity.collection_folders and identity.collection_folders[0].count > 0:
                 collection = identity.collection_folders[0]
                 random_index = random.randrange(collection.count)
@@ -99,9 +124,8 @@ class DiscogsCoordinator(DataUpdateCoordinator):
                 artist_name = random_record.data.get('artists', [{}])[0].get('name', 'Unknown Artist')
                 title = random_record.data.get('title', 'Unknown Title')
                 data["random_record_title"] = f"{artist_name} - {title}"
-
         except Exception as err:
-            _LOGGER.exception("Error updating Discogs data: %s", err)
+            _LOGGER.error("Failed to fetch random record: %s", err)
 
         return data
 
