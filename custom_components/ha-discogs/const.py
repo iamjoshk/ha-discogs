@@ -3,6 +3,9 @@
 DOMAIN = "ha_discogs"
 DEFAULT_NAME = "HA Discogs"
 
+# Define a specific user agent for Discogs API
+USER_AGENT = "HADiscogs/1.0 +https://github.com/iamjoshk/ha-discogs"
+
 # Sensor Types
 SENSOR_COLLECTION_TYPE = "collection"
 SENSOR_WANTLIST_TYPE = "wantlist"

@@ -4,11 +4,10 @@ import requests
 import time
 
 from homeassistant.core import HomeAssistant, ServiceCall, SupportsResponse
-from homeassistant.helpers.aiohttp_client import SERVER_SOFTWARE
 from homeassistant.helpers.json import save_json
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator
 
-from .const import DOMAIN
+from .const import DOMAIN, USER_AGENT
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -20,7 +19,8 @@ def get_full_discogs_collection(username: str, token: str, coordinator=None) -> 
         return []
 
     url = f"https://api.discogs.com/users/{username}/collection/folders/0/releases"
-    headers = {"User-Agent": SERVER_SOFTWARE, "Authorization": f"Discogs token={token}"}
+    # Use our custom user agent for better rate limits
+    headers = {"User-Agent": USER_AGENT, "Authorization": f"Discogs token={token}"}
     releases = []
     page = 1
     per_page = 100

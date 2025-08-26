@@ -4,9 +4,8 @@ import discogs_client
 
 from homeassistant.const import CONF_TOKEN, CONF_NAME, Platform
 from homeassistant.core import HomeAssistant
-from homeassistant.helpers.aiohttp_client import SERVER_SOFTWARE
 
-from .const import DOMAIN, DEFAULT_NAME
+from .const import DOMAIN, DEFAULT_NAME, USER_AGENT
 from .coordinator import DiscogsCoordinator
 from .services import async_register_services
 
@@ -18,9 +17,11 @@ async def async_setup_entry(hass: HomeAssistant, entry):
     """Set up Discogs from a config entry."""
     token = entry.data[CONF_TOKEN]
     
+    # Use our custom user agent
+    client = discogs_client.Client(USER_AGENT, user_token=token)
+    
     # Fetch the username once during setup, as it's needed for the service.
     try:
-        client = discogs_client.Client(SERVER_SOFTWARE, user_token=token)
         identity = await hass.async_add_executor_job(client.identity)
         username = identity.username
     except Exception as err:

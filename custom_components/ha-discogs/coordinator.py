@@ -14,7 +14,7 @@ from homeassistant.helpers.update_coordinator import DataUpdateCoordinator
 from homeassistant.const import CONF_TOKEN, CONF_NAME
 from homeassistant.helpers.aiohttp_client import SERVER_SOFTWARE
 
-from .const import DOMAIN, DEFAULT_NAME
+from .const import DOMAIN, DEFAULT_NAME, USER_AGENT
 
 _LOGGER = logging.getLogger(__name__)
 UPDATE_INTERVAL = timedelta(minutes=30)
@@ -98,7 +98,7 @@ class DiscogsCoordinator(DataUpdateCoordinator):
 
         # Fetch collection value
         headers = {
-            "User-Agent": SERVER_SOFTWARE,
+            "User-Agent": USER_AGENT,
             "Authorization": f"Discogs token={self.token}"
         }
         url = f"https://api.discogs.com/users/{identity.username}/collection/value"
