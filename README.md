@@ -74,6 +74,7 @@ The `download_collection` action can be used to populate a [flex-table-card](htt
 
 ### Example flex-table-card Configuration
 
+>>>>>>> d107785c602d004ac115427a6be5370c92d99692
 ```
 type: custom:flex-table-card
 title: My Discogs Collection

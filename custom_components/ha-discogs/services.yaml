@@ -14,3 +14,20 @@ download_collection:
       default: false
       selector:
         boolean:
+
+download_wantlist:
+  name: Download Wantlist
+  description: "Downloads your full Discogs wantlist data and optionally saves it to a JSON file."
+  fields:
+    path:
+      name: Path
+      description: "The path to save the exported JSON file (only used if download is true)."
+      example: "/config/discogs_wantlist.json"
+      selector:
+        text:
+    download:
+      name: Download File
+      description: "Whether to save the wantlist to a file (defaults to false)."
+      default: false
+      selector:
+        boolean:
