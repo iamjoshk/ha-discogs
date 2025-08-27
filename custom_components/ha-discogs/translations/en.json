@@ -1,0 +1,36 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "Set up Discogs Integration",
+        "description": "Enter your Discogs API token and configure update intervals.",
+        "data": {
+          "token": "Discogs API Token",
+          "name": "Name",
+          "standard_update_interval": "Standard Update Interval (minutes)",
+          "random_record_update_interval": "Random Record Update Interval (minutes)"
+        }
+      }
+    },
+    "error": {
+      "cannot_connect": "Failed to connect to Discogs API",
+      "invalid_auth": "Invalid authentication token",
+      "unknown": "Unexpected error"
+    },
+    "abort": {
+      "already_configured": "Device is already configured"
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "Configure Discogs Integration",
+        "description": "Set update intervals for sensors.",
+        "data": {
+          "standard_update_interval": "Standard Update Interval (minutes)",
+          "random_record_update_interval": "Random Record Update Interval (minutes)"
+        }
+      }
+    }
+  }
+}

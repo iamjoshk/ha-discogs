@@ -12,22 +12,40 @@ from homeassistant.core import HomeAssistant
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator
 from homeassistant.const import CONF_TOKEN, CONF_NAME
 
-from .const import DOMAIN, DEFAULT_NAME, USER_AGENT
+from .const import (
+    DOMAIN, DEFAULT_NAME, USER_AGENT,
+    CONF_STANDARD_UPDATE_INTERVAL, CONF_RANDOM_RECORD_UPDATE_INTERVAL,
+    DEFAULT_STANDARD_UPDATE_INTERVAL, DEFAULT_RANDOM_RECORD_UPDATE_INTERVAL,
+    SENSOR_RANDOM_RECORD_TYPE
+)
 
 _LOGGER = logging.getLogger(__name__)
-UPDATE_INTERVAL = timedelta(minutes=5)  # Changed from 90 seconds to 5 minutes
 
 class DiscogsCoordinator(DataUpdateCoordinator):
     """Coordinator to fetch Discogs data."""
 
     def __init__(self, hass: HomeAssistant, entry):
         """Initialize coordinator."""
+        # Get update intervals from config entry or options
+        self.standard_update_interval = entry.options.get(
+            CONF_STANDARD_UPDATE_INTERVAL, 
+            entry.data.get(CONF_STANDARD_UPDATE_INTERVAL, DEFAULT_STANDARD_UPDATE_INTERVAL)
+        )
+        self.random_record_update_interval = entry.options.get(
+            CONF_RANDOM_RECORD_UPDATE_INTERVAL, 
+            entry.data.get(CONF_RANDOM_RECORD_UPDATE_INTERVAL, DEFAULT_RANDOM_RECORD_UPDATE_INTERVAL)
+        )
+
+        # Default update interval for standard sensors
+        update_interval = timedelta(minutes=self.standard_update_interval)
+
         super().__init__(
             hass,
             _LOGGER,
             name=DOMAIN,
-            update_interval=UPDATE_INTERVAL,
+            update_interval=update_interval,
         )
+        
         self.token = entry.data[CONF_TOKEN]
         self.name = entry.data.get(CONF_NAME, DEFAULT_NAME)
         self.config_entry = entry
@@ -39,6 +57,10 @@ class DiscogsCoordinator(DataUpdateCoordinator):
             "exceeded": False,
             "last_updated": None
         }
+        
+        # Track when the random record was last updated
+        self._last_random_record_update = time.time() - 86400  # Initialize as 1 day ago
+        self._fetch_random_record = True  # Set to True to fetch on first update
 
     @property
     def rate_limit_data(self):
@@ -76,8 +98,21 @@ class DiscogsCoordinator(DataUpdateCoordinator):
         }
 
         try:
+            # Check if we need to update the random record
+            now = time.time()
+            random_record_due = (now - self._last_random_record_update) >= (self.random_record_update_interval * 60)
+            
+            if random_record_due:
+                self._fetch_random_record = True
+                self._last_random_record_update = now
+            
             # Run all API calls in executor to avoid blocking calls
-            api_data = await self.hass.async_add_executor_job(self._fetch_discogs_data)
+            api_data = await self.hass.async_add_executor_job(
+                self._fetch_discogs_data, self._fetch_random_record
+            )
+            
+            # Reset the flag after fetching
+            self._fetch_random_record = False
             
             # Process the data
             data.update(api_data)
@@ -94,7 +129,7 @@ class DiscogsCoordinator(DataUpdateCoordinator):
 
         return data
 
-    def _fetch_discogs_data(self):
+    def _fetch_discogs_data(self, fetch_random_record=True):
         """Fetch all Discogs data synchronously (run in executor)."""
         data = {}
         
@@ -159,26 +194,27 @@ class DiscogsCoordinator(DataUpdateCoordinator):
         except Exception as err:
             _LOGGER.error("Failed to fetch collection value: %s", err)
 
-        # Get random record
-        try:
-            if identity.collection_folders and identity.collection_folders[0].count > 0:
-                collection = identity.collection_folders[0]
-                random_index = random.randrange(collection.count)
-                random_record = collection.releases[random_index].release
+        # Get random record only if needed
+        if fetch_random_record:
+            try:
+                if identity.collection_folders and identity.collection_folders[0].count > 0:
+                    collection = identity.collection_folders[0]
+                    random_index = random.randrange(collection.count)
+                    random_record = collection.releases[random_index].release
 
-                data["random_record_data"] = {
-                    "cat_no": random_record.data.get("labels", [{}])[0].get("catno"),
-                    "cover_image": random_record.data.get("cover_image"),
-                    "format": self._get_format_string(random_record.data),
-                    "label": random_record.data.get("labels", [{}])[0].get("name"),
-                    "released": random_record.data.get("year"),
-                }
-                
-                artist_name = random_record.data.get('artists', [{}])[0].get('name', 'Unknown Artist')
-                title = random_record.data.get('title', 'Unknown Title')
-                data["random_record_title"] = f"{artist_name} - {title}"
-        except Exception as err:
-            _LOGGER.error("Failed to fetch random record: %s", err)
+                    data["random_record_data"] = {
+                        "cat_no": random_record.data.get("labels", [{}])[0].get("catno"),
+                        "cover_image": random_record.data.get("cover_image"),
+                        "format": self._get_format_string(random_record.data),
+                        "label": random_record.data.get("labels", [{}])[0].get("name"),
+                        "released": random_record.data.get("year"),
+                    }
+                    
+                    artist_name = random_record.data.get('artists', [{}])[0].get('name', 'Unknown Artist')
+                    title = random_record.data.get('title', 'Unknown Title')
+                    data["random_record_title"] = f"{artist_name} - {title}"
+            except Exception as err:
+                _LOGGER.error("Failed to fetch random record: %s", err)
 
         return data
 

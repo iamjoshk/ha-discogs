@@ -6,6 +6,13 @@ DEFAULT_NAME = "HA Discogs"
 # Define a specific user agent for Discogs API
 USER_AGENT = "HADiscogs/1.0 +https://github.com/iamjoshk/ha-discogs"
 
+# Configuration options
+CONF_STANDARD_UPDATE_INTERVAL = "standard_update_interval"
+CONF_RANDOM_RECORD_UPDATE_INTERVAL = "random_record_update_interval"
+DEFAULT_STANDARD_UPDATE_INTERVAL = 5  # in minutes
+DEFAULT_RANDOM_RECORD_UPDATE_INTERVAL = 60  # in minutes
+DEFAULT_ACTION_DELAY = 10  # in seconds
+
 # Sensor Types
 SENSOR_COLLECTION_TYPE = "collection"
 SENSOR_WANTLIST_TYPE = "wantlist"

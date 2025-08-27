@@ -2,6 +2,7 @@
 import logging
 import discogs_client
 
+from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import CONF_TOKEN, CONF_NAME, Platform
 from homeassistant.core import HomeAssistant
 
@@ -13,7 +14,7 @@ _LOGGER = logging.getLogger(__name__)
 PLATFORMS = [Platform.SENSOR, Platform.BINARY_SENSOR]
 
 
-async def async_setup_entry(hass: HomeAssistant, entry):
+async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry):
     """Set up Discogs from a config entry."""
     token = entry.data[CONF_TOKEN]
     
@@ -43,7 +44,7 @@ async def async_setup_entry(hass: HomeAssistant, entry):
     return True
 
 
-async def async_unload_entry(hass: HomeAssistant, entry):
+async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry):
     """Unload a config entry."""
     # Unload platforms
     if unload_ok := await hass.config_entries.async_unload_platforms(entry, PLATFORMS):
@@ -53,3 +54,31 @@ async def async_unload_entry(hass: HomeAssistant, entry):
             hass.services.async_remove(DOMAIN, "download_collection")
             
     return unload_ok
+
+
+async def async_reload_entry(hass: HomeAssistant, entry: ConfigEntry):
+    """Reload a config entry."""
+    await async_unload_entry(hass, entry)
+    await async_setup_entry(hass, entry)
+
+
+async def async_options_updated(hass: HomeAssistant, entry: ConfigEntry):
+    """Handle options update."""
+    from datetime import timedelta
+
+    # Get the coordinator
+    coordinator = hass.data[DOMAIN][entry.entry_id]
+    
+    # Update coordinator update intervals
+    coordinator.standard_update_interval = entry.options.get(
+        "standard_update_interval", coordinator.standard_update_interval
+    )
+    coordinator.random_record_update_interval = entry.options.get(
+        "random_record_update_interval", coordinator.random_record_update_interval
+    )
+    
+    # Update coordinator update interval to match standard interval
+    coordinator.update_interval = timedelta(minutes=coordinator.standard_update_interval)
+    
+    # Request a refresh to apply new settings
+    await coordinator.async_request_refresh()
