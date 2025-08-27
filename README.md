@@ -11,6 +11,7 @@ This integration brings your full Discogs collection into Home Assistant, expand
 - Wantlist count sensor
 - Collection value sensors (minimum, median, maximum)
 - Random record sensor with details and artwork
+- Buttons to refresh each data for each API endpoint.
 - Rate limit monitor
 - Action that returns collection data for use in dashboards
 - Support for flex-table-card integration
@@ -57,7 +58,7 @@ To get your Discogs API token:
 
 ### Integration Settings
 
-The update intervals for the standard sensors (collection, wantlist, and collection value sensors) and for random record are each configurable. During setup, you can select the interval you want to use in minutes. After setup, you can change the intervals clicking the settings gear and updating the interval values.
+During integration set up, and later using the settings gear in the integration, you can set the update interval for all sensors or choose to disable automatic sensor updates. Whether the automatic updates are enabled or not, you can use the refresh buttons to update the data for each API endpoint. If you disable the automatic updates, then you can use automations to press the refresh buttons and refresh data from each endpoint at any interval you decide.
 
 ## Available Actions
 
@@ -174,6 +175,10 @@ columns:
   - name: Styles
     data: collection.styles
 ```
+
+
+Sometimes data from Discogs is incomplete or null, which causes flex-table-card to display `undefinedundefinedundefined` in the cell. You can mitigate this by using `modify: if(x.length == 0){""}else{x}` in columns.
+
 
 ## Notes
 
