@@ -129,10 +129,11 @@ class DiscogsCoordinator(DataUpdateCoordinator):
     async def async_update_collection(self):
         """Update collection data."""
         try:
-            identity = await self.hass.async_add_executor_job(self._fetch_identity)
-            if identity:
-                self._data["user"] = identity.username
-                self._data["collection_count"] = identity.num_collection
+            # Use async_add_executor_job for ALL API calls
+            identity_data = await self.hass.async_add_executor_job(self._fetch_identity_data)
+            if identity_data:
+                self._data["user"] = identity_data.get("username")
+                self._data["collection_count"] = identity_data.get("collection_count")
                 self._data["_last_updated"]["collection"] = time.time()
                 return True
         except Exception as err:
@@ -142,10 +143,11 @@ class DiscogsCoordinator(DataUpdateCoordinator):
     async def async_update_wantlist(self):
         """Update wantlist data."""
         try:
-            identity = await self.hass.async_add_executor_job(self._fetch_identity)
-            if identity:
-                self._data["user"] = identity.username
-                self._data["wantlist_count"] = identity.num_wantlist
+            # Use async_add_executor_job for ALL API calls
+            identity_data = await self.hass.async_add_executor_job(self._fetch_identity_data)
+            if identity_data:
+                self._data["user"] = identity_data.get("username")
+                self._data["wantlist_count"] = identity_data.get("wantlist_count")
                 self._data["_last_updated"]["wantlist"] = time.time()
                 return True
         except Exception as err:
@@ -177,8 +179,8 @@ class DiscogsCoordinator(DataUpdateCoordinator):
             _LOGGER.error("Failed to update random record: %s", err)
         return False
 
-    def _fetch_identity(self):
-        """Fetch the user identity."""
+    def _fetch_identity_data(self):
+        """Fetch user identity data without accessing properties directly."""
         # Implement rate limiting
         self._apply_rate_limiting()
         
@@ -189,14 +191,21 @@ class DiscogsCoordinator(DataUpdateCoordinator):
             if hasattr(self._client, '_fetcher') and hasattr(self._client._fetcher, 'headers_returned'):
                 headers = self._client._fetcher.headers_returned
                 self.update_rate_limit_data(headers)
-                
+            
+            # Extract data without triggering API calls
+            identity_data = {
+                "username": identity.username if hasattr(identity, 'username') else "Unknown",
+                "collection_count": identity.num_collection if hasattr(identity, 'num_collection') else 0,
+                "wantlist_count": identity.num_wantlist if hasattr(identity, 'num_wantlist') else 0,
+            }
+            
             # Currency symbol handling
             if hasattr(identity, 'curr_abbr') and identity.curr_abbr:
                 self._data["currency_symbol"] = identity.curr_abbr
             elif hasattr(identity, 'data') and 'curr_abbr' in identity.data:
                 self._data["currency_symbol"] = identity.data['curr_abbr']
                 
-            return identity
+            return identity_data
         except Exception as err:
             # Set rate limit exceeded flag if that was the error
             if "429" in str(err) or "Too Many Requests" in str(err):
@@ -208,9 +217,14 @@ class DiscogsCoordinator(DataUpdateCoordinator):
             
     def _fetch_collection_value(self):
         """Fetch the collection value."""
-        identity = self._fetch_identity()
-        if not identity:
-            return None
+        # Get the username without making multiple API calls
+        username = self._data.get("user")
+        if username == "Unknown":
+            identity_data = self._fetch_identity_data()
+            if identity_data:
+                username = identity_data.get("username")
+            else:
+                return None
             
         # Implement rate limiting
         self._apply_rate_limiting()
@@ -220,7 +234,7 @@ class DiscogsCoordinator(DataUpdateCoordinator):
                 "User-Agent": USER_AGENT,
                 "Authorization": f"Discogs token={self.token}"
             }
-            url = f"https://api.discogs.com/users/{identity.username}/collection/value"
+            url = f"https://api.discogs.com/users/{username}/collection/value"
             
             response = requests.get(url, headers=headers, timeout=10)
             
@@ -269,28 +283,72 @@ class DiscogsCoordinator(DataUpdateCoordinator):
     
     def _fetch_random_record(self):
         """Fetch a random record."""
-        identity = self._fetch_identity()
-        if not identity or not identity.collection_folders or identity.collection_folders[0].count == 0:
-            return None
-            
         # Implement rate limiting
         self._apply_rate_limiting()
         
         try:
-            collection = identity.collection_folders[0]
-            random_index = random.randrange(collection.count)
-            random_record = collection.releases[random_index].release
+            # First make sure we have a username
+            username = self._data.get("user")
+            if username == "Unknown":
+                identity_data = self._fetch_identity_data()
+                if identity_data:
+                    username = identity_data.get("username")
+                else:
+                    return None
+                    
+            # Get collection data
+            folder_id = 0  # Default folder
             
+            # Use direct API call instead of the client library
+            headers = {
+                "User-Agent": USER_AGENT,
+                "Authorization": f"Discogs token={self.token}"
+            }
+            url = f"https://api.discogs.com/users/{username}/collection/folders/{folder_id}/releases"
+            params = {"page": 1, "per_page": 1}  # Just to get count
+            
+            response = requests.get(url, headers=headers, params=params, timeout=10)
+            self.update_rate_limit_data(response.headers, response.status_code)
+            response.raise_for_status()
+            
+            collection_data = response.json()
+            pagination = collection_data.get("pagination", {})
+            total_items = pagination.get("items", 0)
+            
+            if total_items == 0:
+                return None
+                
+            # Get a random item
+            random_page = random.randint(1, pagination.get("pages", 1))
+            random_item = random.randint(0, min(pagination.get("page_size", 1), total_items) - 1)
+            
+            params = {"page": random_page, "per_page": pagination.get("per_page", 50)}
+            response = requests.get(url, headers=headers, params=params, timeout=10)
+            self.update_rate_limit_data(response.headers, response.status_code)
+            response.raise_for_status()
+            
+            page_data = response.json()
+            releases = page_data.get("releases", [])
+            
+            if not releases:
+                return None
+                
+            # Get a random release from this page
+            random_release_data = releases[random_item % len(releases)]
+            basic_info = random_release_data.get("basic_information", {})
+            
+            # Extract the data we need
             record_data = {
-                "cat_no": random_record.data.get("labels", [{}])[0].get("catno"),
-                "cover_image": random_record.data.get("cover_image"),
-                "format": self._get_format_string(random_record.data),
-                "label": random_record.data.get("labels", [{}])[0].get("name"),
-                "released": random_record.data.get("year"),
+                "cat_no": basic_info.get("labels", [{}])[0].get("catno") if basic_info.get("labels") else None,
+                "cover_image": basic_info.get("cover_image"),
+                "format": self._get_format_string(basic_info),
+                "label": basic_info.get("labels", [{}])[0].get("name") if basic_info.get("labels") else None,
+                "released": basic_info.get("year"),
             }
             
-            artist_name = random_record.data.get('artists', [{}])[0].get('name', 'Unknown Artist')
-            title = random_record.data.get('title', 'Unknown Title')
+            artists = basic_info.get("artists", [])
+            artist_name = artists[0].get("name", "Unknown Artist") if artists else "Unknown Artist"
+            title = basic_info.get("title", "Unknown Title")
             record_title = f"{artist_name} - {title}"
             
             return {
