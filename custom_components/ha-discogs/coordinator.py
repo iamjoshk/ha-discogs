@@ -8,8 +8,8 @@ from datetime import timedelta
 import discogs_client
 import requests
 
-from homeassistant.core import HomeAssistant
-from homeassistant.helpers.update_coordinator import DataUpdateCoordinator
+from homeassistant.core import HomeAssistant, callback
+from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, CoordinatorEntity
 from homeassistant.const import CONF_TOKEN, CONF_NAME
 
 from .const import (
@@ -58,9 +58,21 @@ class DiscogsCoordinator(DataUpdateCoordinator):
             "last_updated": None
         }
         
+        # Store the last data to prevent random record from disappearing
+        self._last_data = {
+            "user": "Unknown",
+            "collection_count": 0,
+            "wantlist_count": 0,
+            "collection_value_min": 0.0,
+            "collection_value_median": 0.0,
+            "collection_value_max": 0.0,
+            "currency_symbol": "$",
+            "random_record_title": None,
+            "random_record_data": None,
+        }
+        
         # Track when the random record was last updated
         self._last_random_record_update = time.time() - 86400  # Initialize as 1 day ago
-        self._fetch_random_record = True  # Set to True to fetch on first update
 
     @property
     def rate_limit_data(self):
@@ -85,40 +97,32 @@ class DiscogsCoordinator(DataUpdateCoordinator):
 
     async def _async_update_data(self):
         """Fetch data from Discogs."""
-        data = {
-            "user": "Unknown",
-            "collection_count": 0,
-            "wantlist_count": 0,
-            "collection_value_min": 0.0,
-            "collection_value_median": 0.0,
-            "collection_value_max": 0.0,
-            "currency_symbol": "$",
-            "random_record_title": None,
-            "random_record_data": None,
-        }
-
         try:
             # Check if we need to update the random record
             now = time.time()
             random_record_due = (now - self._last_random_record_update) >= (self.random_record_update_interval * 60)
             
-            if random_record_due:
-                self._fetch_random_record = True
-                self._last_random_record_update = now
-            
             # Run all API calls in executor to avoid blocking calls
             api_data = await self.hass.async_add_executor_job(
-                self._fetch_discogs_data, self._fetch_random_record
+                self._fetch_discogs_data, random_record_due
             )
             
-            # Reset the flag after fetching
-            self._fetch_random_record = False
+            # If we updated the random record, update the timestamp
+            if random_record_due:
+                self._last_random_record_update = now
             
-            # Process the data
-            data.update(api_data)
-
+            # Update our stored data with new values
+            for key, value in api_data.items():
+                if value is not None:  # Only update if we got a real value
+                    self._last_data[key] = value
+                elif key == "random_record_title" or key == "random_record_data":
+                    # Keep previous random record data if not updated this time
+                    api_data[key] = self._last_data.get(key)
+            
             # Reset rate limit exceeded flag if we successfully fetched data
             self._rate_limit_data["exceeded"] = False
+            
+            return {**self._last_data, **api_data}
 
         except Exception as err:
             _LOGGER.exception("Error updating Discogs data: %s", err)
@@ -126,10 +130,11 @@ class DiscogsCoordinator(DataUpdateCoordinator):
             if "429" in str(err) or "Too Many Requests" in str(err):
                 self._rate_limit_data["exceeded"] = True
                 self._rate_limit_data["remaining"] = 0
+            
+            # Return last known good data
+            return self._last_data
 
-        return data
-
-    def _fetch_discogs_data(self, fetch_random_record=True):
+    def _fetch_discogs_data(self, fetch_random_record=False):
         """Fetch all Discogs data synchronously (run in executor)."""
         data = {}
         
@@ -213,8 +218,13 @@ class DiscogsCoordinator(DataUpdateCoordinator):
                     artist_name = random_record.data.get('artists', [{}])[0].get('name', 'Unknown Artist')
                     title = random_record.data.get('title', 'Unknown Title')
                     data["random_record_title"] = f"{artist_name} - {title}"
+                    
+                    _LOGGER.debug("Updated random record: %s", data["random_record_title"])
             except Exception as err:
                 _LOGGER.error("Failed to fetch random record: %s", err)
+                # Don't update random record data if there was an error
+                data["random_record_title"] = None
+                data["random_record_data"] = None
 
         return data
 
@@ -233,3 +243,20 @@ class DiscogsCoordinator(DataUpdateCoordinator):
                 return f"{format_name} ({', '.join(descriptions)})"
             return format_name
         return None
+        
+    @callback
+    def async_update_config(self, standard_interval=None, random_record_interval=None):
+        """Update the coordinator configuration without reloading."""
+        if standard_interval is not None:
+            self.standard_update_interval = standard_interval
+            # Update the coordinator's update interval
+            self.update_interval = timedelta(minutes=standard_interval)
+        
+        if random_record_interval is not None:
+            self.random_record_update_interval = random_record_interval
+            
+        _LOGGER.debug(
+            "Updated coordinator intervals: standard=%d minutes, random record=%d minutes",
+            self.standard_update_interval,
+            self.random_record_update_interval
+        )

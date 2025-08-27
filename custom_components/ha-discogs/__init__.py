@@ -4,9 +4,12 @@ import discogs_client
 
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import CONF_TOKEN, CONF_NAME, Platform
-from homeassistant.core import HomeAssistant
+from homeassistant.core import HomeAssistant, callback
 
-from .const import DOMAIN, DEFAULT_NAME, USER_AGENT
+from .const import (
+    DOMAIN, DEFAULT_NAME, USER_AGENT, 
+    CONF_STANDARD_UPDATE_INTERVAL, CONF_RANDOM_RECORD_UPDATE_INTERVAL
+)
 from .coordinator import DiscogsCoordinator
 from .services import async_register_services
 
@@ -33,7 +36,11 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry):
     coordinator = DiscogsCoordinator(hass, entry)
     await coordinator.async_config_entry_first_refresh()
 
+    # Store in hass data
     hass.data.setdefault(DOMAIN, {})[entry.entry_id] = coordinator
+    
+    # Register update listener for options
+    entry.async_on_unload(entry.add_update_listener(async_options_updated))
 
     # Set up the sensor platform
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
@@ -52,6 +59,7 @@ async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry):
         hass.data[DOMAIN].pop(entry.entry_id)
         if not hass.data[DOMAIN]:  # If it's the last entry, remove the service
             hass.services.async_remove(DOMAIN, "download_collection")
+            hass.services.async_remove(DOMAIN, "download_wantlist")
             
     return unload_ok
 
@@ -64,21 +72,18 @@ async def async_reload_entry(hass: HomeAssistant, entry: ConfigEntry):
 
 async def async_options_updated(hass: HomeAssistant, entry: ConfigEntry):
     """Handle options update."""
-    from datetime import timedelta
-
     # Get the coordinator
     coordinator = hass.data[DOMAIN][entry.entry_id]
     
     # Update coordinator update intervals
-    coordinator.standard_update_interval = entry.options.get(
-        "standard_update_interval", coordinator.standard_update_interval
-    )
-    coordinator.random_record_update_interval = entry.options.get(
-        "random_record_update_interval", coordinator.random_record_update_interval
+    standard_interval = entry.options.get(CONF_STANDARD_UPDATE_INTERVAL)
+    random_record_interval = entry.options.get(CONF_RANDOM_RECORD_UPDATE_INTERVAL)
+    
+    # Update the coordinator's configuration
+    coordinator.async_update_config(
+        standard_interval=standard_interval,
+        random_record_interval=random_record_interval
     )
     
-    # Update coordinator update interval to match standard interval
-    coordinator.update_interval = timedelta(minutes=coordinator.standard_update_interval)
-    
-    # Request a refresh to apply new settings
+    # Request a refresh with the new settings
     await coordinator.async_request_refresh()
