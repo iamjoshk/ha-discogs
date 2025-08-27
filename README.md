@@ -55,6 +55,10 @@ To get your Discogs API token:
 3. Generate a personal access token
 4. Copy the token and use it during integration setup
 
+### Integration Settings
+
+The update intervals for the standard sensors (collection, wantlist, and collection value sensors) and for random record are each configurable. During setup, you can select the interval you want to use in minutes. After setup, you can change the intervals clicking the settings gear and updating the interval values.
+
 ## Available Actions
 
 Note: the data returned even for small collections will exceed the limit (65535 characters) of entity attributes, so the action responses are returned as responses only with an option to download the response as a JSON file.
@@ -173,17 +177,17 @@ columns:
 
 ## Notes
 
-- The integration tries to respect [Discogs' API rate limits](https://www.discogs.com/developers/#page:home,header:home-rate-limiting) by adding delays between API calls (60 requests per minute for authenticated calls). Sensors will update every 5 minutes automatically.
+- The integration tries to respect [Discogs' API rate limits](https://www.discogs.com/developers/#page:home,header:home-rate-limiting) by adding delays between API calls (60 requests per minute for authenticated calls).
 - When using the download actions with large collections or wantlists, it may take some time to complete.
 - A binary sensor is created to monitor rate limit status. 
-- The actions can only be called once every 30 seconds to try and reduce rate limit restrictions.
+- The actions can only be called once every 10 seconds to try and reduce rate limit restrictions.
 
 ## Troubleshooting
 
 - If you see "Rate limit exceeded" warnings, wait 60 seconds before making another request
 - The rate limit binary sensor will show "Problem" when rate limits are exceeded and includes information about remaining limits in the attributes.
 - Make sure your Discogs token has the proper permissions
-- Editing flex-table-card calls the action repeatedly, so the data may not load until you save, wait 30+ seconds, and then refresh the browswer.
+- Editing flex-table-card calls the action repeatedly, so the data may not load until you save, wait 10+ seconds, and then refresh the browswer.
 
 ## Credits and Inspiration
 
