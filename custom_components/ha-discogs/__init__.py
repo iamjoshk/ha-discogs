@@ -6,7 +6,10 @@ from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import CONF_TOKEN, CONF_NAME, Platform
 from homeassistant.core import HomeAssistant
 
-from .const import DOMAIN, DEFAULT_NAME, USER_AGENT, CONF_ENABLE_SCHEDULED_UPDATES, CONF_GLOBAL_UPDATE_INTERVAL, CONF_STANDARD_UPDATE_INTERVAL, CONF_RANDOM_RECORD_UPDATE_INTERVAL
+from .const import (
+    DOMAIN, DEFAULT_NAME, USER_AGENT, 
+    CONF_ENABLE_SCHEDULED_UPDATES, CONF_GLOBAL_UPDATE_INTERVAL
+)
 from .coordinator import DiscogsCoordinator
 from .services import async_register_services
 
@@ -69,21 +72,13 @@ async def async_options_updated(hass: HomeAssistant, entry: ConfigEntry):
     enable_scheduled_updates = entry.options.get(CONF_ENABLE_SCHEDULED_UPDATES)
     global_update_interval = entry.options.get(CONF_GLOBAL_UPDATE_INTERVAL)
     
+    # Update the coordinator's configuration with the new settings
     coordinator.async_update_config(
         enable_scheduled_updates=enable_scheduled_updates,
         global_update_interval=global_update_interval
     )
-    coordinator = hass.data[DOMAIN][entry.entry_id]
     
-    # Update coordinator update intervals
-    standard_interval = entry.options.get(CONF_STANDARD_UPDATE_INTERVAL)
-    random_record_interval = entry.options.get(CONF_RANDOM_RECORD_UPDATE_INTERVAL)
-    
-    # Update the coordinator's configuration
-    coordinator.async_update_config(
-        standard_interval=standard_interval,
-        random_record_interval=random_record_interval
-    )
-    
+    # Request a refresh with the new settings
+    await coordinator.async_request_refresh()
     # Request a refresh with the new settings
     await coordinator.async_request_refresh()

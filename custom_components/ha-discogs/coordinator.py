@@ -14,7 +14,8 @@ from homeassistant.const import CONF_TOKEN, CONF_NAME
 
 from .const import (
     DOMAIN, DEFAULT_NAME, USER_AGENT,
-    CONF_ENABLE_SCHEDULED_UPDATES, DEFAULT_GLOBAL_UPDATE_INTERVAL
+    CONF_ENABLE_SCHEDULED_UPDATES, CONF_GLOBAL_UPDATE_INTERVAL,
+    DEFAULT_GLOBAL_UPDATE_INTERVAL
 )
 
 _LOGGER = logging.getLogger(__name__)
@@ -32,8 +33,8 @@ class DiscogsCoordinator(DataUpdateCoordinator):
         
         # Global update interval (only used if scheduled updates are enabled)
         update_interval = timedelta(minutes=entry.options.get(
-            "global_update_interval", 
-            entry.data.get("global_update_interval", DEFAULT_GLOBAL_UPDATE_INTERVAL)
+            CONF_GLOBAL_UPDATE_INTERVAL, 
+            entry.data.get(CONF_GLOBAL_UPDATE_INTERVAL, DEFAULT_GLOBAL_UPDATE_INTERVAL)
         )) if self.enable_scheduled_updates else None
 
         super().__init__(
@@ -188,7 +189,7 @@ class DiscogsCoordinator(DataUpdateCoordinator):
             if hasattr(self._client, '_fetcher') and hasattr(self._client._fetcher, 'headers_returned'):
                 headers = self._client._fetcher.headers_returned
                 self.update_rate_limit_data(headers)
-            
+                
             # Currency symbol handling
             if hasattr(identity, 'curr_abbr') and identity.curr_abbr:
                 self._data["currency_symbol"] = identity.curr_abbr
