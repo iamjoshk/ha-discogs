@@ -7,11 +7,16 @@ DEFAULT_NAME = "HA Discogs"
 USER_AGENT = "HADiscogs/1.0 +https://github.com/iamjoshk/ha-discogs"
 
 # Configuration options
-CONF_STANDARD_UPDATE_INTERVAL = "standard_update_interval"
-CONF_RANDOM_RECORD_UPDATE_INTERVAL = "random_record_update_interval"
-DEFAULT_STANDARD_UPDATE_INTERVAL = 5  # in minutes
-DEFAULT_RANDOM_RECORD_UPDATE_INTERVAL = 60  # in minutes
+CONF_ENABLE_SCHEDULED_UPDATES = "enable_scheduled_updates"
+CONF_GLOBAL_UPDATE_INTERVAL = "global_update_interval"
+DEFAULT_GLOBAL_UPDATE_INTERVAL = 10  # in minutes
 DEFAULT_ACTION_DELAY = 10  # in seconds
+
+# Endpoint types for button entities
+ENDPOINT_COLLECTION = "collection"
+ENDPOINT_WANTLIST = "wantlist"
+ENDPOINT_COLLECTION_VALUE = "collection_value"
+ENDPOINT_RANDOM_RECORD = "random_record"
 
 # Sensor Types
 SENSOR_COLLECTION_TYPE = "collection"

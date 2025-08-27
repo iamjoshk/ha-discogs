@@ -4,17 +4,14 @@ import discogs_client
 
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import CONF_TOKEN, CONF_NAME, Platform
-from homeassistant.core import HomeAssistant, callback
+from homeassistant.core import HomeAssistant
 
-from .const import (
-    DOMAIN, DEFAULT_NAME, USER_AGENT, 
-    CONF_STANDARD_UPDATE_INTERVAL, CONF_RANDOM_RECORD_UPDATE_INTERVAL
-)
+from .const import DOMAIN, DEFAULT_NAME, USER_AGENT, CONF_ENABLE_SCHEDULED_UPDATES, CONF_GLOBAL_UPDATE_INTERVAL, CONF_STANDARD_UPDATE_INTERVAL, CONF_RANDOM_RECORD_UPDATE_INTERVAL
 from .coordinator import DiscogsCoordinator
 from .services import async_register_services
 
 _LOGGER = logging.getLogger(__name__)
-PLATFORMS = [Platform.SENSOR, Platform.BINARY_SENSOR]
+PLATFORMS = [Platform.SENSOR, Platform.BINARY_SENSOR, Platform.BUTTON]
 
 
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry):
@@ -63,16 +60,19 @@ async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry):
             
     return unload_ok
 
-
-async def async_reload_entry(hass: HomeAssistant, entry: ConfigEntry):
-    """Reload a config entry."""
-    await async_unload_entry(hass, entry)
-    await async_setup_entry(hass, entry)
-
-
 async def async_options_updated(hass: HomeAssistant, entry: ConfigEntry):
     """Handle options update."""
     # Get the coordinator
+    coordinator = hass.data[DOMAIN][entry.entry_id]
+    
+    # Update coordinator config with new options
+    enable_scheduled_updates = entry.options.get(CONF_ENABLE_SCHEDULED_UPDATES)
+    global_update_interval = entry.options.get(CONF_GLOBAL_UPDATE_INTERVAL)
+    
+    coordinator.async_update_config(
+        enable_scheduled_updates=enable_scheduled_updates,
+        global_update_interval=global_update_interval
+    )
     coordinator = hass.data[DOMAIN][entry.entry_id]
     
     # Update coordinator update intervals

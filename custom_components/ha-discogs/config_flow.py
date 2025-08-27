@@ -3,8 +3,8 @@ from homeassistant import config_entries
 from homeassistant.const import CONF_TOKEN, CONF_NAME
 from .const import (
     DOMAIN, DEFAULT_NAME, 
-    CONF_STANDARD_UPDATE_INTERVAL, CONF_RANDOM_RECORD_UPDATE_INTERVAL,
-    DEFAULT_STANDARD_UPDATE_INTERVAL, DEFAULT_RANDOM_RECORD_UPDATE_INTERVAL
+    CONF_ENABLE_SCHEDULED_UPDATES, CONF_GLOBAL_UPDATE_INTERVAL,
+    DEFAULT_GLOBAL_UPDATE_INTERVAL
 )
 
 class DiscogsConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
@@ -21,8 +21,8 @@ class DiscogsConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         data_schema = vol.Schema({
             vol.Required(CONF_TOKEN): str,
             vol.Optional(CONF_NAME, default=DEFAULT_NAME): str,
-            vol.Optional(CONF_STANDARD_UPDATE_INTERVAL, default=DEFAULT_STANDARD_UPDATE_INTERVAL): int,
-            vol.Optional(CONF_RANDOM_RECORD_UPDATE_INTERVAL, default=DEFAULT_RANDOM_RECORD_UPDATE_INTERVAL): int,
+            vol.Optional(CONF_ENABLE_SCHEDULED_UPDATES, default=True): bool,
+            vol.Optional(CONF_GLOBAL_UPDATE_INTERVAL, default=DEFAULT_GLOBAL_UPDATE_INTERVAL): int,
         })
 
         return self.async_show_form(
@@ -51,17 +51,17 @@ class DiscogsOptionsFlowHandler(config_entries.OptionsFlow):
 
         options = {
             vol.Optional(
-                CONF_STANDARD_UPDATE_INTERVAL,
+                CONF_ENABLE_SCHEDULED_UPDATES,
                 default=self.config_entry.options.get(
-                    CONF_STANDARD_UPDATE_INTERVAL, 
-                    self.config_entry.data.get(CONF_STANDARD_UPDATE_INTERVAL, DEFAULT_STANDARD_UPDATE_INTERVAL)
+                    CONF_ENABLE_SCHEDULED_UPDATES, 
+                    self.config_entry.data.get(CONF_ENABLE_SCHEDULED_UPDATES, True)
                 ),
-            ): int,
+            ): bool,
             vol.Optional(
-                CONF_RANDOM_RECORD_UPDATE_INTERVAL,
+                CONF_GLOBAL_UPDATE_INTERVAL,
                 default=self.config_entry.options.get(
-                    CONF_RANDOM_RECORD_UPDATE_INTERVAL, 
-                    self.config_entry.data.get(CONF_RANDOM_RECORD_UPDATE_INTERVAL, DEFAULT_RANDOM_RECORD_UPDATE_INTERVAL)
+                    CONF_GLOBAL_UPDATE_INTERVAL, 
+                    self.config_entry.data.get(CONF_GLOBAL_UPDATE_INTERVAL, DEFAULT_GLOBAL_UPDATE_INTERVAL)
                 ),
             ): int,
         }

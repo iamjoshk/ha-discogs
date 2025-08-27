@@ -9,14 +9,12 @@ import discogs_client
 import requests
 
 from homeassistant.core import HomeAssistant, callback
-from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, CoordinatorEntity
+from homeassistant.helpers.update_coordinator import DataUpdateCoordinator
 from homeassistant.const import CONF_TOKEN, CONF_NAME
 
 from .const import (
     DOMAIN, DEFAULT_NAME, USER_AGENT,
-    CONF_STANDARD_UPDATE_INTERVAL, CONF_RANDOM_RECORD_UPDATE_INTERVAL,
-    DEFAULT_STANDARD_UPDATE_INTERVAL, DEFAULT_RANDOM_RECORD_UPDATE_INTERVAL,
-    SENSOR_RANDOM_RECORD_TYPE
+    CONF_ENABLE_SCHEDULED_UPDATES, DEFAULT_GLOBAL_UPDATE_INTERVAL
 )
 
 _LOGGER = logging.getLogger(__name__)
@@ -26,18 +24,17 @@ class DiscogsCoordinator(DataUpdateCoordinator):
 
     def __init__(self, hass: HomeAssistant, entry):
         """Initialize coordinator."""
-        # Get update intervals from config entry or options
-        self.standard_update_interval = entry.options.get(
-            CONF_STANDARD_UPDATE_INTERVAL, 
-            entry.data.get(CONF_STANDARD_UPDATE_INTERVAL, DEFAULT_STANDARD_UPDATE_INTERVAL)
+        # Check if scheduled updates are enabled
+        self.enable_scheduled_updates = entry.options.get(
+            CONF_ENABLE_SCHEDULED_UPDATES, 
+            entry.data.get(CONF_ENABLE_SCHEDULED_UPDATES, True)
         )
-        self.random_record_update_interval = entry.options.get(
-            CONF_RANDOM_RECORD_UPDATE_INTERVAL, 
-            entry.data.get(CONF_RANDOM_RECORD_UPDATE_INTERVAL, DEFAULT_RANDOM_RECORD_UPDATE_INTERVAL)
-        )
-
-        # Default update interval for standard sensors
-        update_interval = timedelta(minutes=self.standard_update_interval)
+        
+        # Global update interval (only used if scheduled updates are enabled)
+        update_interval = timedelta(minutes=entry.options.get(
+            "global_update_interval", 
+            entry.data.get("global_update_interval", DEFAULT_GLOBAL_UPDATE_INTERVAL)
+        )) if self.enable_scheduled_updates else None
 
         super().__init__(
             hass,
@@ -58,21 +55,29 @@ class DiscogsCoordinator(DataUpdateCoordinator):
             "last_updated": None
         }
         
-        # Store the last data to prevent random record from disappearing
-        self._last_data = {
+        # Store data for each endpoint separately
+        self._data = {
             "user": "Unknown",
             "collection_count": 0,
             "wantlist_count": 0,
-            "collection_value_min": 0.0,
-            "collection_value_median": 0.0,
-            "collection_value_max": 0.0,
+            "collection_value": {
+                "min": 0.0,
+                "median": 0.0,
+                "max": 0.0
+            },
             "currency_symbol": "$",
-            "random_record_title": None,
-            "random_record_data": None,
+            "random_record": {
+                "title": None,
+                "data": None
+            },
+            # Last updated timestamps for each endpoint
+            "_last_updated": {
+                "collection": None,
+                "wantlist": None,
+                "collection_value": None,
+                "random_record": None
+            }
         }
-        
-        # Track when the random record was last updated
-        self._last_random_record_update = time.time() - 86400  # Initialize as 1 day ago
 
     @property
     def rate_limit_data(self):
@@ -97,71 +102,118 @@ class DiscogsCoordinator(DataUpdateCoordinator):
 
     async def _async_update_data(self):
         """Fetch data from Discogs."""
+        if not self.enable_scheduled_updates:
+            # If scheduled updates are disabled, just return the current data
+            return self._data
+            
         try:
-            # Check if we need to update the random record
-            now = time.time()
-            random_record_due = (now - self._last_random_record_update) >= (self.random_record_update_interval * 60)
+            # Update all endpoints
+            await self.async_update_collection()
+            await self.async_update_wantlist()
+            await self.async_update_collection_value()
+            await self.async_update_random_record()
             
-            # Run all API calls in executor to avoid blocking calls
-            api_data = await self.hass.async_add_executor_job(
-                self._fetch_discogs_data, random_record_due
-            )
-            
-            # If we updated the random record, update the timestamp
-            if random_record_due:
-                self._last_random_record_update = now
-            
-            # Update our stored data with new values
-            for key, value in api_data.items():
-                if value is not None:  # Only update if we got a real value
-                    self._last_data[key] = value
-                elif key == "random_record_title" or key == "random_record_data":
-                    # Keep previous random record data if not updated this time
-                    api_data[key] = self._last_data.get(key)
-            
-            # Reset rate limit exceeded flag if we successfully fetched data
+            # Reset rate limit exceeded flag if we successfully fetched all data
             self._rate_limit_data["exceeded"] = False
             
-            return {**self._last_data, **api_data}
-
         except Exception as err:
             _LOGGER.exception("Error updating Discogs data: %s", err)
             # Check if error is due to rate limiting
             if "429" in str(err) or "Too Many Requests" in str(err):
                 self._rate_limit_data["exceeded"] = True
                 self._rate_limit_data["remaining"] = 0
+        
+        return self._data
+    
+    async def async_update_collection(self):
+        """Update collection data."""
+        try:
+            identity = await self.hass.async_add_executor_job(self._fetch_identity)
+            if identity:
+                self._data["user"] = identity.username
+                self._data["collection_count"] = identity.num_collection
+                self._data["_last_updated"]["collection"] = time.time()
+                return True
+        except Exception as err:
+            _LOGGER.error("Failed to update collection: %s", err)
+        return False
             
-            # Return last known good data
-            return self._last_data
+    async def async_update_wantlist(self):
+        """Update wantlist data."""
+        try:
+            identity = await self.hass.async_add_executor_job(self._fetch_identity)
+            if identity:
+                self._data["user"] = identity.username
+                self._data["wantlist_count"] = identity.num_wantlist
+                self._data["_last_updated"]["wantlist"] = time.time()
+                return True
+        except Exception as err:
+            _LOGGER.error("Failed to update wantlist: %s", err)
+        return False
+    
+    async def async_update_collection_value(self):
+        """Update collection value data."""
+        try:
+            result = await self.hass.async_add_executor_job(self._fetch_collection_value)
+            if result:
+                self._data["collection_value"] = result["collection_value"]
+                self._data["currency_symbol"] = result["currency_symbol"]
+                self._data["_last_updated"]["collection_value"] = time.time()
+                return True
+        except Exception as err:
+            _LOGGER.error("Failed to update collection value: %s", err)
+        return False
+    
+    async def async_update_random_record(self):
+        """Update random record data."""
+        try:
+            result = await self.hass.async_add_executor_job(self._fetch_random_record)
+            if result:
+                self._data["random_record"] = result
+                self._data["_last_updated"]["random_record"] = time.time()
+                return True
+        except Exception as err:
+            _LOGGER.error("Failed to update random record: %s", err)
+        return False
 
-    def _fetch_discogs_data(self, fetch_random_record=False):
-        """Fetch all Discogs data synchronously (run in executor)."""
-        data = {}
-        
+    def _fetch_identity(self):
+        """Fetch the user identity."""
         # Implement rate limiting
-        if self._rate_limit_data.get("last_updated") is not None:
-            time_since_last = time.time() - self._rate_limit_data.get("last_updated")
-            if time_since_last < 5.0:  # Same 5s limit as in services.py
-                _LOGGER.debug("Rate limiting: Waiting %.2f seconds", 5.0 - time_since_last)
-                time.sleep(5.0 - time_since_last)
+        self._apply_rate_limiting()
         
-        # Fetch identity data
         try:
             identity = self._client.identity()
-            data["user"] = identity.username
-            data["collection_count"] = identity.num_collection
-            data["wantlist_count"] = identity.num_wantlist
-
-            # Fetch currency symbol
+            
+            # Update rate limit data from any headers available
+            if hasattr(self._client, '_fetcher') and hasattr(self._client._fetcher, 'headers_returned'):
+                headers = self._client._fetcher.headers_returned
+                self.update_rate_limit_data(headers)
+            
+            # Currency symbol handling
             if hasattr(identity, 'curr_abbr') and identity.curr_abbr:
-                data["currency_symbol"] = identity.curr_abbr
+                self._data["currency_symbol"] = identity.curr_abbr
             elif hasattr(identity, 'data') and 'curr_abbr' in identity.data:
-                data["currency_symbol"] = identity.data['curr_abbr']
+                self._data["currency_symbol"] = identity.data['curr_abbr']
+                
+            return identity
         except Exception as err:
-            _LOGGER.error("Failed to fetch user identity: %s", err)
-            return data
-
-        # Fetch collection value
+            # Set rate limit exceeded flag if that was the error
+            if "429" in str(err) or "Too Many Requests" in str(err):
+                self._rate_limit_data["exceeded"] = True
+                self._rate_limit_data["remaining"] = 0
+                
+            _LOGGER.error("Failed to fetch identity: %s", err)
+            return None
+            
+    def _fetch_collection_value(self):
+        """Fetch the collection value."""
+        identity = self._fetch_identity()
+        if not identity:
+            return None
+            
+        # Implement rate limiting
+        self._apply_rate_limiting()
+        
         try:
             headers = {
                 "User-Agent": USER_AGENT,
@@ -176,58 +228,87 @@ class DiscogsCoordinator(DataUpdateCoordinator):
             
             if response.status_code == 429:
                 _LOGGER.warning("Rate limit exceeded while fetching collection value")
-                return data
+                return None
                 
             response.raise_for_status()
             value_data = response.json()
             
+            collection_value = {
+                "min": 0.0,
+                "median": 0.0,
+                "max": 0.0
+            }
+            
             # Clean and convert values
-            for key, data_key in [
-                ("minimum", "collection_value_min"),
-                ("median", "collection_value_median"),
-                ("maximum", "collection_value_max")
-            ]:
-                value_str = value_data.get(key, "0.00")
+            value_map = {
+                "minimum": "min",
+                "median": "median", 
+                "maximum": "max"
+            }
+            
+            for api_key, data_key in value_map.items():
+                value_str = value_data.get(api_key, "0.00")
                 if isinstance(value_str, str):
                     numeric_value_str = re.sub(r'[^\d.]', '', value_str.replace(',', ''))
                     try:
-                        data[data_key] = float(numeric_value_str)
+                        collection_value[data_key] = float(numeric_value_str)
                     except ValueError:
-                        data[data_key] = 0.0
+                        collection_value[data_key] = 0.0
                 else:
-                    data[data_key] = 0.0
+                    collection_value[data_key] = 0.0
+            
+            return {
+                "collection_value": collection_value,
+                "currency_symbol": self._data["currency_symbol"]
+            }
+            
         except Exception as err:
             _LOGGER.error("Failed to fetch collection value: %s", err)
-
-        # Get random record only if needed
-        if fetch_random_record:
-            try:
-                if identity.collection_folders and identity.collection_folders[0].count > 0:
-                    collection = identity.collection_folders[0]
-                    random_index = random.randrange(collection.count)
-                    random_record = collection.releases[random_index].release
-
-                    data["random_record_data"] = {
-                        "cat_no": random_record.data.get("labels", [{}])[0].get("catno"),
-                        "cover_image": random_record.data.get("cover_image"),
-                        "format": self._get_format_string(random_record.data),
-                        "label": random_record.data.get("labels", [{}])[0].get("name"),
-                        "released": random_record.data.get("year"),
-                    }
-                    
-                    artist_name = random_record.data.get('artists', [{}])[0].get('name', 'Unknown Artist')
-                    title = random_record.data.get('title', 'Unknown Title')
-                    data["random_record_title"] = f"{artist_name} - {title}"
-                    
-                    _LOGGER.debug("Updated random record: %s", data["random_record_title"])
-            except Exception as err:
-                _LOGGER.error("Failed to fetch random record: %s", err)
-                # Don't update random record data if there was an error
-                data["random_record_title"] = None
-                data["random_record_data"] = None
-
-        return data
-
+            return None
+    
+    def _fetch_random_record(self):
+        """Fetch a random record."""
+        identity = self._fetch_identity()
+        if not identity or not identity.collection_folders or identity.collection_folders[0].count == 0:
+            return None
+            
+        # Implement rate limiting
+        self._apply_rate_limiting()
+        
+        try:
+            collection = identity.collection_folders[0]
+            random_index = random.randrange(collection.count)
+            random_record = collection.releases[random_index].release
+            
+            record_data = {
+                "cat_no": random_record.data.get("labels", [{}])[0].get("catno"),
+                "cover_image": random_record.data.get("cover_image"),
+                "format": self._get_format_string(random_record.data),
+                "label": random_record.data.get("labels", [{}])[0].get("name"),
+                "released": random_record.data.get("year"),
+            }
+            
+            artist_name = random_record.data.get('artists', [{}])[0].get('name', 'Unknown Artist')
+            title = random_record.data.get('title', 'Unknown Title')
+            record_title = f"{artist_name} - {title}"
+            
+            return {
+                "title": record_title,
+                "data": record_data
+            }
+            
+        except Exception as err:
+            _LOGGER.error("Failed to fetch random record: %s", err)
+            return None
+    
+    def _apply_rate_limiting(self):
+        """Apply rate limiting to prevent too many requests."""
+        if self._rate_limit_data.get("last_updated") is not None:
+            time_since_last = time.time() - self._rate_limit_data.get("last_updated")
+            if time_since_last < 5.0:
+                _LOGGER.debug("Rate limiting: Waiting %.2f seconds", 5.0 - time_since_last)
+                time.sleep(5.0 - time_since_last)
+    
     def _get_format_string(self, record_data):
         """Build format string from record data."""
         formats = record_data.get('formats', [{}])
@@ -245,18 +326,18 @@ class DiscogsCoordinator(DataUpdateCoordinator):
         return None
         
     @callback
-    def async_update_config(self, standard_interval=None, random_record_interval=None):
-        """Update the coordinator configuration without reloading."""
-        if standard_interval is not None:
-            self.standard_update_interval = standard_interval
-            # Update the coordinator's update interval
-            self.update_interval = timedelta(minutes=standard_interval)
-        
-        if random_record_interval is not None:
-            self.random_record_update_interval = random_record_interval
+    def async_update_config(self, enable_scheduled_updates=None, global_update_interval=None):
+        """Update the coordinator configuration."""
+        if enable_scheduled_updates is not None:
+            self.enable_scheduled_updates = enable_scheduled_updates
+            
+        if global_update_interval is not None and self.enable_scheduled_updates:
+            self.update_interval = timedelta(minutes=global_update_interval)
+        elif not self.enable_scheduled_updates:
+            self.update_interval = None
             
         _LOGGER.debug(
-            "Updated coordinator intervals: standard=%d minutes, random record=%d minutes",
-            self.standard_update_interval,
-            self.random_record_update_interval
+            "Updated coordinator config: scheduled updates=%s, interval=%s",
+            self.enable_scheduled_updates,
+            self.update_interval
         )
