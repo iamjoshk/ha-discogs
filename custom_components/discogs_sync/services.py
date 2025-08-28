@@ -1,4 +1,4 @@
-"""Services for the Discogs integration."""
+"""Services for the Discogs Sync integration."""
 import logging
 import requests
 import time
