@@ -51,11 +51,11 @@ class DiscogsRefreshButton(CoordinatorEntity, ButtonEntity):
         if endpoint_type == ENDPOINT_COLLECTION:
             self._attr_icon = "mdi:refresh"
         elif endpoint_type == ENDPOINT_WANTLIST:
-            self._attr_icon = "mdi:heart-refresh"
+            self._attr_icon = "mdi:refresh"
         elif endpoint_type == ENDPOINT_COLLECTION_VALUE:
-            self._attr_icon = "mdi:cash-refresh"
+            self._attr_icon = "mdi:refresh"
         elif endpoint_type == ENDPOINT_RANDOM_RECORD:
-            self._attr_icon = "mdi:shuffle-variant"
+            self._attr_icon = "mdi:refresh"
 
     async def async_press(self) -> None:
         """Handle button press."""
