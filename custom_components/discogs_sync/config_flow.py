@@ -87,7 +87,7 @@ class DiscogsOptionsFlowHandler(config_entries.OptionsFlow):
             data.update(user_input)
             return self.async_create_entry(title="", data=data)
 
-        # Show interval configuration
+        # Show interval configuration with better descriptions
         return self.async_show_form(
             step_id="intervals",
             data_schema=vol.Schema({
@@ -96,24 +96,36 @@ class DiscogsOptionsFlowHandler(config_entries.OptionsFlow):
                     default=self._entry_options.get(
                         CONF_COLLECTION_UPDATE_INTERVAL, DEFAULT_COLLECTION_UPDATE_INTERVAL
                     ),
+                    description={
+                        "suggested_value": "Minutes between collection count updates"
+                    },
                 ): vol.All(vol.Coerce(int), vol.Range(min=1)),
                 vol.Optional(
                     CONF_WANTLIST_UPDATE_INTERVAL,
                     default=self._entry_options.get(
                         CONF_WANTLIST_UPDATE_INTERVAL, DEFAULT_WANTLIST_UPDATE_INTERVAL
                     ),
+                    description={
+                        "suggested_value": "Minutes between wantlist count updates"
+                    },
                 ): vol.All(vol.Coerce(int), vol.Range(min=1)),
                 vol.Optional(
                     CONF_COLLECTION_VALUE_UPDATE_INTERVAL,
                     default=self._entry_options.get(
                         CONF_COLLECTION_VALUE_UPDATE_INTERVAL, DEFAULT_COLLECTION_VALUE_UPDATE_INTERVAL
                     ),
+                    description={
+                        "suggested_value": "Minutes between collection value updates"
+                    },
                 ): vol.All(vol.Coerce(int), vol.Range(min=1)),
                 vol.Optional(
                     CONF_RANDOM_RECORD_UPDATE_INTERVAL,
                     default=self._entry_options.get(
                         CONF_RANDOM_RECORD_UPDATE_INTERVAL, DEFAULT_RANDOM_RECORD_UPDATE_INTERVAL
                     ),
+                    description={
+                        "suggested_value": "Minutes between random record updates"
+                    },
                 ): vol.All(vol.Coerce(int), vol.Range(min=1)),
             }),
             description_placeholders={

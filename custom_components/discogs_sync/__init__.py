@@ -70,20 +70,34 @@ async def async_options_updated(hass: HomeAssistant, entry: ConfigEntry):
     # Get the coordinator
     coordinator = hass.data[DOMAIN][entry.entry_id]
     
-    # Update coordinator config with new options
+    # Check if automatic updates are enabled
     enable_scheduled_updates = entry.options.get(CONF_ENABLE_SCHEDULED_UPDATES)
-    global_update_interval = entry.options.get(CONF_GLOBAL_UPDATE_INTERVAL)
     
-    # Get individual endpoint intervals
+    # Log the retrieved options
+    _LOGGER.debug(
+        "Options updated: enable_updates=%s, options=%s",
+        enable_scheduled_updates,
+        entry.options
+    )
+    
+    # Get interval values - if automatic updates are disabled, these won't be present
     collection_interval = entry.options.get(CONF_COLLECTION_UPDATE_INTERVAL)
-    wantlist_interval = entry.options.get(CONF_WANTLIST_UPDATE_INTERVAL)
+    wantlist_interval = entry.options.get(CONF_WANTLIST_UPDATE_INTERVAL) 
     collection_value_interval = entry.options.get(CONF_COLLECTION_VALUE_UPDATE_INTERVAL)
     random_record_interval = entry.options.get(CONF_RANDOM_RECORD_UPDATE_INTERVAL)
+    
+    # Log interval values
+    _LOGGER.debug(
+        "Update intervals: collection=%s, wantlist=%s, value=%s, random=%s",
+        collection_interval,
+        wantlist_interval,
+        collection_value_interval,
+        random_record_interval
+    )
     
     # Update the coordinator's configuration with the new settings
     coordinator.async_update_config(
         enable_scheduled_updates=enable_scheduled_updates,
-        global_update_interval=global_update_interval,
         collection_interval=collection_interval,
         wantlist_interval=wantlist_interval,
         collection_value_interval=collection_value_interval,

@@ -155,40 +155,49 @@ class DiscogsCoordinator(DataUpdateCoordinator):
     
     @callback
     def async_update_config(self, enable_scheduled_updates=None, global_update_interval=None, 
-                       collection_interval=None, wantlist_interval=None, 
-                       collection_value_interval=None, random_record_interval=None):
+                        collection_interval=None, wantlist_interval=None, 
+                        collection_value_interval=None, random_record_interval=None):
         """Update coordinator configuration."""
+        _LOGGER.debug(
+            "Updating coordinator config: enable=%s, collection=%s, wantlist=%s, value=%s, random=%s",
+            enable_scheduled_updates,
+            collection_interval,
+            wantlist_interval,
+            collection_value_interval,
+            random_record_interval
+        )
+        
         if enable_scheduled_updates is not None:
             self.enable_scheduled_updates = enable_scheduled_updates
+            _LOGGER.debug("Set enable_scheduled_updates to %s", enable_scheduled_updates)
             
         if global_update_interval is not None:
             self.global_update_interval = global_update_interval
-            
-            # Update endpoints that don't have their own interval set
-            if collection_interval is None:
-                self._update_intervals["collection"] = global_update_interval * 60
-        
-            if wantlist_interval is None:
-                self._update_intervals["wantlist"] = global_update_interval * 60
-            
-            if collection_value_interval is None:
-                self._update_intervals["collection_value"] = global_update_interval * 60
-        
             # Update the coordinator's general update interval
             self.update_interval = timedelta(minutes=global_update_interval)
-    
-        # Update individual intervals if provided
-        if collection_interval is not None:
-            self._update_intervals["collection"] = collection_interval * 60
+            _LOGGER.debug("Set global_update_interval to %s minutes", global_update_interval)
         
-        if wantlist_interval is not None:
-            self._update_intervals["wantlist"] = wantlist_interval * 60
-        
-        if collection_value_interval is not None:
-            self._update_intervals["collection_value"] = collection_value_interval * 60
-        
-        if random_record_interval is not None:
-            self._update_intervals["random_record"] = random_record_interval * 60
+        # Update individual intervals if provided (and enable_scheduled_updates is True)
+        if enable_scheduled_updates is not False:
+            if collection_interval is not None:
+                self._update_intervals["collection"] = collection_interval * 60
+                _LOGGER.debug("Set collection update interval to %s minutes (%s seconds)", 
+                            collection_interval, collection_interval * 60)
+            
+            if wantlist_interval is not None:
+                self._update_intervals["wantlist"] = wantlist_interval * 60
+                _LOGGER.debug("Set wantlist update interval to %s minutes (%s seconds)", 
+                            wantlist_interval, wantlist_interval * 60)
+            
+            if collection_value_interval is not None:
+                self._update_intervals["collection_value"] = collection_value_interval * 60
+                _LOGGER.debug("Set collection value update interval to %s minutes (%s seconds)", 
+                            collection_value_interval, collection_value_interval * 60)
+            
+            if random_record_interval is not None:
+                self._update_intervals["random_record"] = random_record_interval * 60
+                _LOGGER.debug("Set random record update interval to %s minutes (%s seconds)", 
+                            random_record_interval, random_record_interval * 60)
 
     async def async_update_collection(self):
         """Update collection data."""
@@ -394,7 +403,7 @@ class DiscogsCoordinator(DataUpdateCoordinator):
                 self._rate_limit_data["exceeded"] = True
                 self._rate_limit_data["remaining"] = 0
             raise
-        
+
     def _currency_to_float(self, value):
         """Convert currency string to float by removing non-numeric characters except decimal point."""
         if not value:
