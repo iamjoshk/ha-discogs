@@ -1,3 +1,4 @@
 {
-  "name": "HA Discogs"
+  "name": "HA Discogs",
+  "hide_default_branch": true
 }
