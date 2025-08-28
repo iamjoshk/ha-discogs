@@ -61,8 +61,7 @@ async def async_setup_entry(
 class DiscogsSensor(CoordinatorEntity, SensorEntity, RestoreEntity):
     """A sensor implementation for the Discogs integration."""
     _attr_has_entity_name = True
-    _attr_should_poll = False
-
+    
     def __init__(self, coordinator, description: SensorEntityDescription):
         """Initialize the sensor."""
         super().__init__(coordinator)
@@ -72,7 +71,8 @@ class DiscogsSensor(CoordinatorEntity, SensorEntity, RestoreEntity):
             "identifiers": {(DOMAIN, coordinator.config_entry.entry_id)},
             "name": coordinator.name
         }
-        self._restored_state = None
+        self._stored_state = None
+        self._stored_attrs = {}
         
         # Set currency symbol for collection value sensors
         if description.key in [
@@ -83,100 +83,100 @@ class DiscogsSensor(CoordinatorEntity, SensorEntity, RestoreEntity):
             self._attr_native_unit_of_measurement = coordinator.data.get("currency_symbol")
 
     async def async_added_to_hass(self) -> None:
-        """Handle entity which will be added."""
+        """When entity is added to hass."""
         await super().async_added_to_hass()
         
-        # Restore previous state if available
-        if (last_state := await self.async_get_last_state()) is not None:
-            self._restored_state = last_state.state
-            
-            # We'll use the restored state until the coordinator provides fresh data
-            if self.coordinator.data is None:
-                self._attr_native_value = self._restored_state
-                self._attr_available = True
-
-    @property
-    def available(self) -> bool:
-        """Return if entity is available."""
-        # Return True if we have current data or a restored state
-        if self.coordinator.data is not None:
-            return True
-        return self._restored_state is not None
+        if state := await self.async_get_last_state():
+            self._stored_state = state.state
+            # Store all attributes
+            self._stored_attrs = dict(state.attributes)
 
     @property
     def native_value(self):
         """Return the state of the sensor."""
-        if self.coordinator.data is None and self._restored_state is not None:
-            return self._restored_state
+        # First try to get data from the coordinator
+        value = None
+        
+        if self.coordinator.data:
+            if self.entity_description.key == SENSOR_COLLECTION_TYPE:
+                value = self.coordinator.data.get("collection_count")
+                
+            elif self.entity_description.key == SENSOR_WANTLIST_TYPE:
+                value = self.coordinator.data.get("wantlist_count")
+                
+            elif self.entity_description.key == SENSOR_RANDOM_RECORD_TYPE:
+                value = self.coordinator.data.get("random_record", {}).get("title")
+                
+            elif self.entity_description.key == SENSOR_COLLECTION_VALUE_MIN_TYPE:
+                value = self.coordinator.data.get("collection_value", {}).get("min")
+                
+            elif self.entity_description.key == SENSOR_COLLECTION_VALUE_MEDIAN_TYPE:
+                value = self.coordinator.data.get("collection_value", {}).get("median")
+                
+            elif self.entity_description.key == SENSOR_COLLECTION_VALUE_MAX_TYPE:
+                value = self.coordinator.data.get("collection_value", {}).get("max")
+        
+        # If no value from coordinator but we have a stored state, use that
+        if value is None and self._stored_state not in [None, "unknown", "unavailable"]:
+            return self._stored_state
+        
+        return value
 
-        if self.entity_description.key == SENSOR_COLLECTION_TYPE:
-            return self.coordinator.data.get("collection_count")
-            
-        elif self.entity_description.key == SENSOR_WANTLIST_TYPE:
-            return self.coordinator.data.get("wantlist_count")
-            
-        elif self.entity_description.key == SENSOR_RANDOM_RECORD_TYPE:
-            return self.coordinator.data.get("random_record", {}).get("title")
-            
-        elif self.entity_description.key == SENSOR_COLLECTION_VALUE_MIN_TYPE:
-            return self.coordinator.data.get("collection_value", {}).get("min")
-            
-        elif self.entity_description.key == SENSOR_COLLECTION_VALUE_MEDIAN_TYPE:
-            return self.coordinator.data.get("collection_value", {}).get("median")
-            
-        elif self.entity_description.key == SENSOR_COLLECTION_VALUE_MAX_TYPE:
-            return self.coordinator.data.get("collection_value", {}).get("max")
+    @property
+    def available(self) -> bool:
+        """Return if entity is available."""
+        # If coordinator is unavailable but we have stored state, we're still available
+        if not self.coordinator.last_update_success:
+            return self._stored_state not in [None, "unknown", "unavailable"]
+        return True
 
     @property
     def extra_state_attributes(self):
         """Return the state attributes."""
-        attrs = {"user": self.coordinator.data.get("user")} if self.coordinator.data else {}
+        # Start with any stored attributes
+        attrs = {}
         
+        # If coordinator data is None, return stored attributes
         if not self.coordinator.data:
-            return attrs
+            return self._stored_attrs
         
+        # Add user information
+        attrs["user"] = self.coordinator.data.get("user")
+        
+        # For random record, include additional data
         if self.entity_description.key == SENSOR_RANDOM_RECORD_TYPE:
             if random_record_data := self.coordinator.data.get("random_record", {}).get("data"):
                 attrs.update(random_record_data)
                 
-        # Include last response timestamp for relevant endpoints
+        # Get the timestamp based on sensor type
+        timestamp_key = None
         if self.entity_description.key == SENSOR_COLLECTION_TYPE:
-            last_updated = self.coordinator.data.get("_last_updated", {}).get("collection")
-            if last_updated and isinstance(last_updated, str):
-                try:
-                    last_response = datetime.datetime.fromtimestamp(
-                        datetime.datetime.fromisoformat(last_updated).timestamp()
-                    ).strftime('%Y-%m-%d %H:%M:%S')
-                    attrs["last response"] = last_response
-                except (ValueError, TypeError):
-                    attrs["last response"] = last_updated
-                
+            timestamp_key = "collection"
         elif self.entity_description.key == SENSOR_WANTLIST_TYPE:
-            last_updated = self.coordinator.data.get("_last_updated", {}).get("wantlist")
-            if last_updated and isinstance(last_updated, str):
-                try:
-                    last_response = datetime.datetime.fromtimestamp(
-                        datetime.datetime.fromisoformat(last_updated).timestamp()
-                    ).strftime('%Y-%m-%d %H:%M:%S')
-                    attrs["last response"] = last_response
-                except (ValueError, TypeError):
-                    attrs["last response"] = last_updated
-                
+            timestamp_key = "wantlist"
         elif self.entity_description.key == SENSOR_RANDOM_RECORD_TYPE:
-            last_updated = self.coordinator.data.get("_last_updated", {}).get("random_record")
-            if last_updated and isinstance(last_updated, str):
-                try:
-                    last_response = datetime.datetime.fromtimestamp(
-                        datetime.datetime.fromisoformat(last_updated).timestamp()
-                    ).strftime('%Y-%m-%d %H:%M:%S')
-                    attrs["last response"] = last_response
-                except (ValueError, TypeError):
-                    attrs["last response"] = last_updated
-                
+            timestamp_key = "random_record"
         elif self.entity_description.key in [
             SENSOR_COLLECTION_VALUE_MIN_TYPE,
             SENSOR_COLLECTION_VALUE_MEDIAN_TYPE,
             SENSOR_COLLECTION_VALUE_MAX_TYPE
+        ]:
+            timestamp_key = "collection_value"
+        
+        # Process timestamp if available
+        if timestamp_key:
+            last_updated = self.coordinator.data.get("_last_updated", {}).get(timestamp_key)
+            if last_updated and isinstance(last_updated, str):
+                try:
+                    # Convert to datetime string format
+                    last_response = datetime.datetime.fromtimestamp(
+                        datetime.datetime.fromisoformat(last_updated).timestamp()
+                    ).strftime('%Y-%m-%d %H:%M:%S')
+                    attrs["last response"] = last_response
+                except (ValueError, TypeError):
+                    attrs["last response"] = last_updated
+                
+        return attrs
         ]:
             last_updated = self.coordinator.data.get("_last_updated", {}).get("collection_value")
             if last_updated and isinstance(last_updated, str):
