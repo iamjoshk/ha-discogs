@@ -58,12 +58,12 @@ class DiscogsRateLimitSensor(CoordinatorEntity, BinarySensorEntity):
             "remaining": data.get("remaining", 0),
         }
         
-        # Add last updated timestamp
+        # Add last response timestamp
         if data.get("last_updated"):
-            last_updated = datetime.datetime.fromtimestamp(
+            last_response = datetime.datetime.fromtimestamp(
                 data.get("last_updated")
             ).strftime('%Y-%m-%d %H:%M:%S')
-            attributes["last_updated"] = last_updated
+            attributes["last response"] = last_response
             
         # Calculate reset time (60 seconds from when rate limit was first hit)
         if data.get("exceeded") and data.get("last_updated"):

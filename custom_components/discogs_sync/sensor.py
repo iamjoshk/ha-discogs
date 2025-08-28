@@ -61,6 +61,7 @@ async def async_setup_entry(
 class DiscogsSensor(CoordinatorEntity, SensorEntity, RestoreEntity):
     """A sensor implementation for the Discogs integration."""
     _attr_has_entity_name = True
+    _attr_should_poll = False
 
     def __init__(self, coordinator, description: SensorEntityDescription):
         """Initialize the sensor."""
@@ -71,6 +72,7 @@ class DiscogsSensor(CoordinatorEntity, SensorEntity, RestoreEntity):
             "identifiers": {(DOMAIN, coordinator.config_entry.entry_id)},
             "name": coordinator.name
         }
+        self._restored_state = None
         
         # Set currency symbol for collection value sensors
         if description.key in [
@@ -80,9 +82,33 @@ class DiscogsSensor(CoordinatorEntity, SensorEntity, RestoreEntity):
         ]:
             self._attr_native_unit_of_measurement = coordinator.data.get("currency_symbol")
 
+    async def async_added_to_hass(self) -> None:
+        """Handle entity which will be added."""
+        await super().async_added_to_hass()
+        
+        # Restore previous state if available
+        if (last_state := await self.async_get_last_state()) is not None:
+            self._restored_state = last_state.state
+            
+            # We'll use the restored state until the coordinator provides fresh data
+            if self.coordinator.data is None:
+                self._attr_native_value = self._restored_state
+                self._attr_available = True
+
+    @property
+    def available(self) -> bool:
+        """Return if entity is available."""
+        # Return True if we have current data or a restored state
+        if self.coordinator.data is not None:
+            return True
+        return self._restored_state is not None
+
     @property
     def native_value(self):
         """Return the state of the sensor."""
+        if self.coordinator.data is None and self._restored_state is not None:
+            return self._restored_state
+
         if self.entity_description.key == SENSOR_COLLECTION_TYPE:
             return self.coordinator.data.get("collection_count")
             
@@ -104,46 +130,48 @@ class DiscogsSensor(CoordinatorEntity, SensorEntity, RestoreEntity):
     @property
     def extra_state_attributes(self):
         """Return the state attributes."""
-        attrs = {"user": self.coordinator.data.get("user")}
+        attrs = {"user": self.coordinator.data.get("user")} if self.coordinator.data else {}
+        
+        if not self.coordinator.data:
+            return attrs
         
         if self.entity_description.key == SENSOR_RANDOM_RECORD_TYPE:
             if random_record_data := self.coordinator.data.get("random_record", {}).get("data"):
                 attrs.update(random_record_data)
                 
-        # Include last updated timestamp for relevant endpoints
+        # Include last response timestamp for relevant endpoints
         if self.entity_description.key == SENSOR_COLLECTION_TYPE:
             last_updated = self.coordinator.data.get("_last_updated", {}).get("collection")
             if last_updated and isinstance(last_updated, str):
                 try:
-                    last_updated = datetime.datetime.fromtimestamp(
+                    last_response = datetime.datetime.fromtimestamp(
                         datetime.datetime.fromisoformat(last_updated).timestamp()
                     ).strftime('%Y-%m-%d %H:%M:%S')
-                    attrs["last_updated"] = last_updated
+                    attrs["last response"] = last_response
                 except (ValueError, TypeError):
-                    # If conversion fails, use the raw value
-                    attrs["last_updated"] = last_updated
+                    attrs["last response"] = last_updated
                 
         elif self.entity_description.key == SENSOR_WANTLIST_TYPE:
             last_updated = self.coordinator.data.get("_last_updated", {}).get("wantlist")
             if last_updated and isinstance(last_updated, str):
                 try:
-                    last_updated = datetime.datetime.fromtimestamp(
+                    last_response = datetime.datetime.fromtimestamp(
                         datetime.datetime.fromisoformat(last_updated).timestamp()
                     ).strftime('%Y-%m-%d %H:%M:%S')
-                    attrs["last_updated"] = last_updated
+                    attrs["last response"] = last_response
                 except (ValueError, TypeError):
-                    attrs["last_updated"] = last_updated
+                    attrs["last response"] = last_updated
                 
         elif self.entity_description.key == SENSOR_RANDOM_RECORD_TYPE:
             last_updated = self.coordinator.data.get("_last_updated", {}).get("random_record")
             if last_updated and isinstance(last_updated, str):
                 try:
-                    last_updated = datetime.datetime.fromtimestamp(
+                    last_response = datetime.datetime.fromtimestamp(
                         datetime.datetime.fromisoformat(last_updated).timestamp()
                     ).strftime('%Y-%m-%d %H:%M:%S')
-                    attrs["last_updated"] = last_updated
+                    attrs["last response"] = last_response
                 except (ValueError, TypeError):
-                    attrs["last_updated"] = last_updated
+                    attrs["last response"] = last_updated
                 
         elif self.entity_description.key in [
             SENSOR_COLLECTION_VALUE_MIN_TYPE,
@@ -153,25 +181,11 @@ class DiscogsSensor(CoordinatorEntity, SensorEntity, RestoreEntity):
             last_updated = self.coordinator.data.get("_last_updated", {}).get("collection_value")
             if last_updated and isinstance(last_updated, str):
                 try:
-                    last_updated = datetime.datetime.fromtimestamp(
+                    last_response = datetime.datetime.fromtimestamp(
                         datetime.datetime.fromisoformat(last_updated).timestamp()
                     ).strftime('%Y-%m-%d %H:%M:%S')
-                    attrs["last_updated"] = last_updated
+                    attrs["last response"] = last_response
                 except (ValueError, TypeError):
-                    attrs["last_updated"] = last_updated
+                    attrs["last response"] = last_updated
                 
         return attrs
-
-    async def async_added_to_hass(self) -> None:
-        """Handle entity which will be added."""
-        await super().async_added_to_hass()
-        
-        # Restore previous state if available
-        if (last_state := await self.async_get_last_state()) is not None:
-            self._attr_native_value = last_state.state
-            
-            # Restore attributes if they exist
-            if "user" in last_state.attributes:
-                self._attr_extra_state_attributes = {
-                    key: value for key, value in last_state.attributes.items()
-                }
