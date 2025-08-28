@@ -1,7 +1,6 @@
 """Sensor platform for Discogs Sync."""
 from __future__ import annotations
 
-import datetime
 from homeassistant.components.sensor import SensorEntity, SensorEntityDescription
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 from homeassistant.core import HomeAssistant
@@ -109,27 +108,21 @@ class DiscogsSensor(CoordinatorEntity, SensorEntity):
             if random_record_data := self.coordinator.data.get("random_record", {}).get("data"):
                 attrs.update(random_record_data)
                 
-        # Include last updated timestamp as formatted datetime for all sensors
+        # Include last updated timestamp for relevant endpoints
         if self.entity_description.key == SENSOR_COLLECTION_TYPE:
             last_updated = self.coordinator.data.get("_last_updated", {}).get("collection")
             if last_updated:
-                attrs["last_updated"] = datetime.datetime.fromtimestamp(
-                    last_updated
-                ).strftime('%Y-%m-%d %H:%M:%S')
+                attrs["last_updated"] = last_updated
                 
         elif self.entity_description.key == SENSOR_WANTLIST_TYPE:
             last_updated = self.coordinator.data.get("_last_updated", {}).get("wantlist")
             if last_updated:
-                attrs["last_updated"] = datetime.datetime.fromtimestamp(
-                    last_updated
-                ).strftime('%Y-%m-%d %H:%M:%S')
+                attrs["last_updated"] = last_updated
                 
         elif self.entity_description.key == SENSOR_RANDOM_RECORD_TYPE:
             last_updated = self.coordinator.data.get("_last_updated", {}).get("random_record")
             if last_updated:
-                attrs["last_updated"] = datetime.datetime.fromtimestamp(
-                    last_updated
-                ).strftime('%Y-%m-%d %H:%M:%S')
+                attrs["last_updated"] = last_updated
                 
         elif self.entity_description.key in [
             SENSOR_COLLECTION_VALUE_MIN_TYPE,
@@ -138,8 +131,6 @@ class DiscogsSensor(CoordinatorEntity, SensorEntity):
         ]:
             last_updated = self.coordinator.data.get("_last_updated", {}).get("collection_value")
             if last_updated:
-                attrs["last_updated"] = datetime.datetime.fromtimestamp(
-                    last_updated
-                ).strftime('%Y-%m-%d %H:%M:%S')
+                attrs["last_updated"] = last_updated
                 
         return attrs

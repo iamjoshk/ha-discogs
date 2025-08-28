@@ -8,7 +8,7 @@ from .const import (
 )
 
 class DiscogsConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
-    """Handle a config flow for Discogs."""
+    """Handle a config flow for Discogs Sync."""
 
     VERSION = 1
 

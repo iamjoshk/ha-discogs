@@ -9,8 +9,8 @@ USER_AGENT = "DiscogsSync/1.0 +https://github.com/iamjoshk/discogs_sync"
 # Configuration options
 CONF_ENABLE_SCHEDULED_UPDATES = "enable_scheduled_updates"
 CONF_GLOBAL_UPDATE_INTERVAL = "global_update_interval"
-CONF_STANDARD_UPDATE_INTERVAL = "standard_update_interval"
-CONF_RANDOM_RECORD_UPDATE_INTERVAL = "random_record_update_interval"
+CONF_STANDARD_UPDATE_INTERVAL = "standard_update_interval"  # Added missing constant
+CONF_RANDOM_RECORD_UPDATE_INTERVAL = "random_record_update_interval"  # Added missing constant
 DEFAULT_GLOBAL_UPDATE_INTERVAL = 10  # in minutes
 DEFAULT_ACTION_DELAY = 10  # in seconds
 

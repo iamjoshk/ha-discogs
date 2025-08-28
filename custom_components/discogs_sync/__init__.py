@@ -80,3 +80,5 @@ async def async_options_updated(hass: HomeAssistant, entry: ConfigEntry):
     
     # Request a refresh with the new settings
     await coordinator.async_request_refresh()
+    # Request a refresh with the new settings
+    await coordinator.async_request_refresh()
