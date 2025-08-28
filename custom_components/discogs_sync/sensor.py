@@ -4,7 +4,7 @@ from __future__ import annotations
 from homeassistant.components.sensor import SensorEntity, SensorEntityDescription
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 from homeassistant.helpers.restore_state import RestoreEntity
-from homeassistant.core import HomeAssistant, callback
+from homeassistant.core import HomeAssistant, State, callback
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.config_entries import ConfigEntry
 import datetime
@@ -65,7 +65,7 @@ class DiscogsSensor(CoordinatorEntity, SensorEntity, RestoreEntity):
     """A sensor implementation for the Discogs integration."""
     _attr_has_entity_name = True
     _attr_should_poll = False
-    
+
     def __init__(self, coordinator, description: SensorEntityDescription):
         """Initialize the sensor."""
         super().__init__(coordinator)
@@ -75,8 +75,9 @@ class DiscogsSensor(CoordinatorEntity, SensorEntity, RestoreEntity):
             "identifiers": {(DOMAIN, coordinator.config_entry.entry_id)},
             "name": coordinator.name
         }
-        self._attr_native_value = None
-        self._attr_extra_state_attributes = {}
+        self._state = None
+        self._attributes = {}
+        self._attr_available = False
         
         # Set currency symbol for collection value sensors
         if description.key in [
@@ -89,48 +90,49 @@ class DiscogsSensor(CoordinatorEntity, SensorEntity, RestoreEntity):
     async def async_added_to_hass(self) -> None:
         """When entity is added to hass."""
         await super().async_added_to_hass()
-        
-        # Handle state restoration
-        if last_state := await self.async_get_last_state():
-            _LOGGER.debug("%s: Restoring state: %s", self.entity_id, last_state.state)
-            self._attr_native_value = last_state.state
-            if last_state.attributes:
-                self._attr_extra_state_attributes = dict(last_state.attributes)
-        
-        # Register callback for coordinator updates
-        self.async_on_remove(
-            self.coordinator.async_add_listener(self._handle_coordinator_update)
-        )
-        
-        # Get initial state
-        self._handle_coordinator_update()
 
+        # Restore state
+        last_state = await self.async_get_last_state()
+        if last_state:
+            _LOGGER.debug("%s: Restoring state: %s", self.entity_id, last_state.state)
+            self._state = last_state.state
+            self._attributes = dict(last_state.attributes)
+            self._attr_available = True
+            self.async_write_ha_state()
+            
     @callback
     def _handle_coordinator_update(self) -> None:
         """Handle updated data from the coordinator."""
-        if self.coordinator.data is None:
-            # No data available, keep the restored state
+        self._update_from_coordinator()
+        self.async_write_ha_state()
+
+    def _update_from_coordinator(self) -> None:
+        """Update state and attributes from coordinator data."""
+        if not self.coordinator.data:
             return
-        
+
+        # Update availability
+        self._attr_available = True
+
         # Update state based on sensor type
         if self.entity_description.key == SENSOR_COLLECTION_TYPE:
-            self._attr_native_value = self.coordinator.data.get("collection_count")
+            self._state = self.coordinator.data.get("collection_count")
             
         elif self.entity_description.key == SENSOR_WANTLIST_TYPE:
-            self._attr_native_value = self.coordinator.data.get("wantlist_count")
+            self._state = self.coordinator.data.get("wantlist_count")
             
         elif self.entity_description.key == SENSOR_RANDOM_RECORD_TYPE:
-            self._attr_native_value = self.coordinator.data.get("random_record", {}).get("title")
+            self._state = self.coordinator.data.get("random_record", {}).get("title")
             
         elif self.entity_description.key == SENSOR_COLLECTION_VALUE_MIN_TYPE:
-            self._attr_native_value = self.coordinator.data.get("collection_value", {}).get("min")
+            self._state = self.coordinator.data.get("collection_value", {}).get("min")
             
         elif self.entity_description.key == SENSOR_COLLECTION_VALUE_MEDIAN_TYPE:
-            self._attr_native_value = self.coordinator.data.get("collection_value", {}).get("median")
+            self._state = self.coordinator.data.get("collection_value", {}).get("median")
             
         elif self.entity_description.key == SENSOR_COLLECTION_VALUE_MAX_TYPE:
-            self._attr_native_value = self.coordinator.data.get("collection_value", {}).get("max")
-        
+            self._state = self.coordinator.data.get("collection_value", {}).get("max")
+
         # Update attributes
         attributes = {}
         
@@ -143,7 +145,7 @@ class DiscogsSensor(CoordinatorEntity, SensorEntity, RestoreEntity):
             if random_record_data := self.coordinator.data.get("random_record", {}).get("data"):
                 attributes.update(random_record_data)
         
-        # Add timestamp based on sensor type
+        # Set timestamp key based on sensor type
         timestamp_key = None
         if self.entity_description.key == SENSOR_COLLECTION_TYPE:
             timestamp_key = "collection"
@@ -167,16 +169,19 @@ class DiscogsSensor(CoordinatorEntity, SensorEntity, RestoreEntity):
                         datetime.datetime.fromisoformat(last_updated).timestamp()
                     ).strftime('%Y-%m-%d %H:%M:%S')
                     attributes["last response"] = last_response
-                    _LOGGER.debug("%s: Setting last response: %s", self.entity_id, last_response)
                 except (ValueError, TypeError):
                     attributes["last response"] = last_updated
-        
-        self._attr_extra_state_attributes = attributes
-        self.async_write_ha_state()
+                    
+        self._attributes = attributes
 
     @property
-    def available(self) -> bool:
-        """Return if entity is available."""
-        # Entity is available if we have a value (either from coordinator or restored)
-        return self._attr_native_value is not None
-        return dict(attrs)
+    def native_value(self):
+        """Return the native value of the sensor."""
+        if self.coordinator.data:
+            self._update_from_coordinator()
+        return self._state
+
+    @property
+    def extra_state_attributes(self):
+        """Return entity specific state attributes."""
+        return self._attributes
