@@ -133,22 +133,23 @@ class DiscogsSensor(CoordinatorEntity, SensorEntity, RestoreEntity):
     @property
     def extra_state_attributes(self):
         """Return the state attributes."""
-        # Start with any stored attributes
-        attrs = {}
+        # Always start with stored attributes as base
+        attrs = dict(self._stored_attrs) if hasattr(self, '_stored_attrs') and self._stored_attrs else {}
         
-        # If coordinator data is None, return stored attributes
-        if not self.coordinator.data:
-            return self._stored_attrs
+        # Return stored attributes if coordinator data is None
+        if self.coordinator.data is None:
+            return attrs
         
         # Add user information
-        attrs["user"] = self.coordinator.data.get("user")
+        if user := self.coordinator.data.get("user"):
+            attrs["user"] = user
         
-        # For random record, include additional data
+        # Add random record data if applicable
         if self.entity_description.key == SENSOR_RANDOM_RECORD_TYPE:
             if random_record_data := self.coordinator.data.get("random_record", {}).get("data"):
                 attrs.update(random_record_data)
-                
-        # Get the timestamp based on sensor type
+        
+        # Set timestamp key based on sensor type
         timestamp_key = None
         if self.entity_description.key == SENSOR_COLLECTION_TYPE:
             timestamp_key = "collection"
@@ -163,17 +164,19 @@ class DiscogsSensor(CoordinatorEntity, SensorEntity, RestoreEntity):
         ]:
             timestamp_key = "collection_value"
         
-        # Process timestamp if available
-        if timestamp_key:
-            last_updated = self.coordinator.data.get("_last_updated", {}).get(timestamp_key)
-            if last_updated and isinstance(last_updated, str):
-                try:
-                    # Convert to datetime string format
-                    last_response = datetime.datetime.fromtimestamp(
-                        datetime.datetime.fromisoformat(last_updated).timestamp()
-                    ).strftime('%Y-%m-%d %H:%M:%S')
-                    attrs["last response"] = last_response
-                except (ValueError, TypeError):
-                    attrs["last response"] = last_updated
-                
-        return attrs
+        # Add timestamp data if available
+        if timestamp_key and "_last_updated" in self.coordinator.data:
+            last_updated_dict = self.coordinator.data.get("_last_updated", {})
+            if last_updated := last_updated_dict.get(timestamp_key):
+                if isinstance(last_updated, str):
+                    try:
+                        # Convert timestamp to friendly format
+                        last_response = datetime.datetime.fromtimestamp(
+                            datetime.datetime.fromisoformat(last_updated).timestamp()
+                        ).strftime('%Y-%m-%d %H:%M:%S')
+                        attrs["last response"] = last_response
+                    except (ValueError, TypeError):
+                        attrs["last response"] = last_updated
+        
+        # Force attribute updates by returning a new dict
+        return dict(attrs)
