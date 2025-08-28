@@ -1,10 +1,10 @@
-"""Constants for the Discogs integration."""
+"""Constants for the Discogs Sync integration."""
 
-DOMAIN = "ha_discogs"
-DEFAULT_NAME = "HA Discogs"
+DOMAIN = "discogs_sync"
+DEFAULT_NAME = "Discogs Sync"
 
 # Define a specific user agent for Discogs API
-USER_AGENT = "HADiscogs/1.0 +https://github.com/iamjoshk/ha-discogs"
+USER_AGENT = "DiscogsSync/1.0 +https://github.com/iamjoshk/discogs_sync"
 
 # Configuration options
 CONF_ENABLE_SCHEDULED_UPDATES = "enable_scheduled_updates"
