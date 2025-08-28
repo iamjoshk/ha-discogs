@@ -274,6 +274,61 @@ class DiscogsCoordinator(DataUpdateCoordinator):
             _LOGGER.error("Failed to fetch identity: %s", err)
             return None
             
+    def _fetch_collection(self):
+        """Fetch collection data from Discogs."""
+        # Implement rate limiting
+        self._apply_rate_limiting()
+        
+        try:
+            me = self._client.identity()
+            user = me.username
+            collection = self._client.user(user).collection_folders[0]
+            result = collection.count
+            
+            # Store username for later use
+            self._data["user"] = user
+            
+            # Update rate limit data from any headers available
+            if hasattr(self._client, '_fetcher') and hasattr(self._client._fetcher, 'headers_returned'):
+                self._handle_rate_limit_headers(self._client._fetcher.headers_returned)
+            
+            return result
+        except Exception as err:
+            # Check if it's a rate limit error
+            if "429" in str(err) or "Too Many Requests" in str(err):
+                self._rate_limit_data["exceeded"] = True
+                self._rate_limit_data["remaining"] = 0
+            _LOGGER.error("Error fetching collection: %s", err)
+            raise
+
+    def _fetch_wantlist(self):
+        """Fetch wantlist data from Discogs."""
+        # Implement rate limiting
+        self._apply_rate_limiting()
+        
+        try:
+            me = self._client.identity()
+            user = me.username
+            wantlist = self._client.user(user).wantlist
+            result = len(wantlist)
+            
+            # Store username for later use if not already set
+            if not self._data.get("user"):
+                self._data["user"] = user
+                
+            # Update rate limit data from any headers available
+            if hasattr(self._client, '_fetcher') and hasattr(self._client._fetcher, 'headers_returned'):
+                self._handle_rate_limit_headers(self._client._fetcher.headers_returned)
+                
+            return result
+        except Exception as err:
+            # Check if it's a rate limit error
+            if "429" in str(err) or "Too Many Requests" in str(err):
+                self._rate_limit_data["exceeded"] = True
+                self._rate_limit_data["remaining"] = 0
+            _LOGGER.error("Error fetching wantlist: %s", err)
+            raise
+    
     def _fetch_collection_value(self):
         """Fetch the collection value."""
         # Get the username without making multiple API calls
@@ -291,7 +346,7 @@ class DiscogsCoordinator(DataUpdateCoordinator):
         try:
             headers = {
                 "User-Agent": USER_AGENT,
-                "Authorization": f"Discogs token={self.token}"
+                "Authorization": f"Discogs token={self._token}"  # Changed from self.token to self._token
             }
             url = f"https://api.discogs.com/users/{username}/collection/value"
             
@@ -361,7 +416,7 @@ class DiscogsCoordinator(DataUpdateCoordinator):
             # Use direct API call instead of the client library
             headers = {
                 "User-Agent": USER_AGENT,
-                "Authorization": f"Discogs token={self.token}"
+                "Authorization": f"Discogs token={self._token}"
             }
             url = f"https://api.discogs.com/users/{username}/collection/folders/{folder_id}/releases"
             params = {"page": 1, "per_page": 1}  # Just to get count
@@ -443,39 +498,52 @@ class DiscogsCoordinator(DataUpdateCoordinator):
             return format_name
         return None
         
-    @callback
-    def async_update_config(self, enable_scheduled_updates=None, global_update_interval=None, 
-                       collection_interval=None, wantlist_interval=None, 
-                       collection_value_interval=None, random_record_interval=None):
-        """Update the coordinator configuration."""
-        if enable_scheduled_updates is not None:
-            self.enable_scheduled_updates = enable_scheduled_updates
-            
-        if global_update_interval is not None:
-            self.global_update_interval = global_update_interval
-            
-            # Update endpoints that don't have their own interval set
-            if collection_interval is None:
-                self._update_intervals["collection"] = global_update_interval * 60
-        
-            if wantlist_interval is None:
-                self._update_intervals["wantlist"] = global_update_interval * 60
-            
-            if collection_value_interval is None:
-                self._update_intervals["collection_value"] = global_update_interval * 60
-        
-            # Update the coordinator's general update interval
-            self.update_interval = timedelta(minutes=global_update_interval)
+    def get_rate_limit_data(self):
+        """Provide access to rate limit data for the binary sensor."""
+        # Ensure we have a last_updated field
+        if self._rate_limit_data.get("last_updated") is None:
+            self._rate_limit_data["last_updated"] = time.time() 
     
-        # Update individual intervals if provided
-        if collection_interval is not None:
-            self._update_intervals["collection"] = collection_interval * 60
-        
-        if wantlist_interval is not None:
-            self._update_intervals["wantlist"] = wantlist_interval * 60
-        
-        if collection_value_interval is not None:
-            self._update_intervals["collection_value"] = collection_value_interval * 60
-        
-        if random_record_interval is not None:
-            self._update_intervals["random_record"] = random_record_interval * 60
+        return self._rate_limit_data
+    
+    def _handle_rate_limit_headers(self, headers):
+        """Process rate limit headers from a response."""
+        try:
+            if headers:
+                self._rate_limit_data["total"] = int(headers.get("X-Discogs-Ratelimit", "60"))
+                self._rate_limit_data["used"] = int(headers.get("X-Discogs-Ratelimit-Used", "0"))
+                self._rate_limit_data["remaining"] = int(headers.get("X-Discogs-Ratelimit-Remaining", "60"))
+                self._rate_limit_data["last_updated"] = time.time()
+                
+                # Log rate limit status
+                _LOGGER.debug(
+                    "Discogs rate limit: %s/%s used, %s remaining", 
+                    self._rate_limit_data["used"], 
+                    self._rate_limit_data["total"], 
+                    self._rate_limit_data["remaining"]
+                )
+        except (ValueError, TypeError, KeyError) as err:
+            _LOGGER.warning("Failed to parse rate limit headers: %s", err)
+
+    def update_rate_limit_data(self, headers, status_code=None):
+        """Update rate limit data from response headers."""
+        try:
+            if headers:
+                self._rate_limit_data["total"] = int(headers.get("X-Discogs-Ratelimit", "60"))
+                self._rate_limit_data["used"] = int(headers.get("X-Discogs-Ratelimit-Used", "0"))
+                self._rate_limit_data["remaining"] = int(headers.get("X-Discogs-Ratelimit-Remaining", "60"))
+                self._rate_limit_data["last_updated"] = time.time()
+                
+                # Set exceeded flag if status code is 429
+                if status_code == 429:
+                    self._rate_limit_data["exceeded"] = True
+                    
+                # Log rate limit status
+                _LOGGER.debug(
+                    "Discogs rate limit: %s/%s used, %s remaining", 
+                    self._rate_limit_data["used"], 
+                    self._rate_limit_data["total"], 
+                    self._rate_limit_data["remaining"]
+                )
+        except (ValueError, TypeError, KeyError) as err:
+            _LOGGER.warning("Failed to parse rate limit headers: %s", err)
