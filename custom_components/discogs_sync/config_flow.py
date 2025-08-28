@@ -46,9 +46,7 @@ class DiscogsOptionsFlowHandler(config_entries.OptionsFlow):
 
     def __init__(self, config_entry):
         """Initialize options flow."""
-        # DEPRECATED: self.config_entry = config_entry
-        # Instead, store values in instance variables
-        self._config_entry = config_entry  # Use underscore prefix
+        self._config_entry = config_entry
         self._entry_data = config_entry.data
         self._entry_options = config_entry.options
 
@@ -57,7 +55,6 @@ class DiscogsOptionsFlowHandler(config_entries.OptionsFlow):
         if user_input is not None:
             return self.async_create_entry(title="", data=user_input)
 
-        # Use self._entry_options instead of self.config_entry.options
         return self.async_show_form(
             step_id="init",
             data_schema=vol.Schema(
@@ -65,42 +62,48 @@ class DiscogsOptionsFlowHandler(config_entries.OptionsFlow):
                     vol.Required(
                         CONF_ENABLE_SCHEDULED_UPDATES,
                         default=self._entry_options.get(CONF_ENABLE_SCHEDULED_UPDATES, True),
+                        description={"suggested_value": "Enable or disable automatic updates for all endpoints"},
                     ): bool,
                     vol.Required(
                         CONF_GLOBAL_UPDATE_INTERVAL,
                         default=self._entry_options.get(
                             CONF_GLOBAL_UPDATE_INTERVAL, DEFAULT_GLOBAL_UPDATE_INTERVAL
                         ),
+                        description={"suggested_value": "Default update interval in minutes (used when no specific interval is set)"},
                     ): vol.All(vol.Coerce(int), vol.Range(min=1)),
                     # Individual update intervals
                     vol.Optional(
                         CONF_COLLECTION_UPDATE_INTERVAL,
-                        description={"suggested_value": "Minutes between collection updates"},
                         default=self._entry_options.get(
                             CONF_COLLECTION_UPDATE_INTERVAL, DEFAULT_COLLECTION_UPDATE_INTERVAL
                         ),
+                        description={"suggested_value": "Minutes between collection updates (overrides default)"},
                     ): vol.All(vol.Coerce(int), vol.Range(min=1)),
                     vol.Optional(
                         CONF_WANTLIST_UPDATE_INTERVAL,
-                        description={"suggested_value": "Minutes between wantlist updates"},
                         default=self._entry_options.get(
                             CONF_WANTLIST_UPDATE_INTERVAL, DEFAULT_WANTLIST_UPDATE_INTERVAL
                         ),
+                        description={"suggested_value": "Minutes between wantlist updates (overrides default)"},
                     ): vol.All(vol.Coerce(int), vol.Range(min=1)),
                     vol.Optional(
                         CONF_COLLECTION_VALUE_UPDATE_INTERVAL,
-                        description={"suggested_value": "Minutes between collection value updates"},
                         default=self._entry_options.get(
                             CONF_COLLECTION_VALUE_UPDATE_INTERVAL, DEFAULT_COLLECTION_VALUE_UPDATE_INTERVAL
                         ),
+                        description={"suggested_value": "Minutes between collection value updates (overrides default)"},
                     ): vol.All(vol.Coerce(int), vol.Range(min=1)),
                     vol.Optional(
                         CONF_RANDOM_RECORD_UPDATE_INTERVAL,
-                        description={"suggested_value": "Minutes between random record updates"},
                         default=self._entry_options.get(
                             CONF_RANDOM_RECORD_UPDATE_INTERVAL, DEFAULT_RANDOM_RECORD_UPDATE_INTERVAL
                         ),
+                        description={"suggested_value": "Minutes between random record updates (overrides default)"},
                     ): vol.All(vol.Coerce(int), vol.Range(min=1)),
                 }
-            )
+            ),
+            description_placeholders={
+                "update_info": "When automatic updates are enabled, each endpoint will be updated according to its interval. "
+                "Set the global update interval to define a default, or specify individual intervals for each endpoint."
+            },
         )

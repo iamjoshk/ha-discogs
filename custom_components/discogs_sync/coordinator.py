@@ -377,11 +377,12 @@ class DiscogsCoordinator(DataUpdateCoordinator):
             # Store currency symbol
             self._data["currency_symbol"] = currency
             
-            # Convert to numeric values
+            # Convert to numeric values - strip currency symbols first
+            # Use a helper function to safely convert currency strings to float
             result = {
-                "min": float(min_value),
-                "median": float(median_value),
-                "max": float(max_value),
+                "min": self._currency_to_float(min_value),
+                "median": self._currency_to_float(median_value),
+                "max": self._currency_to_float(max_value),
                 "currency": currency
             }
             
@@ -393,7 +394,30 @@ class DiscogsCoordinator(DataUpdateCoordinator):
                 self._rate_limit_data["exceeded"] = True
                 self._rate_limit_data["remaining"] = 0
             raise
-    
+        
+    def _currency_to_float(self, value):
+        """Convert currency string to float by removing non-numeric characters except decimal point."""
+        if not value:
+            return 0.0
+            
+        # If value is already a number, just return it
+        if isinstance(value, (int, float)):
+            return float(value)
+        
+        # Convert to string if somehow not already a string
+        if not isinstance(value, str):
+            value = str(value)
+        
+        # Remove currency symbols and other non-numeric characters
+        # Keep only digits, decimal point, and negative sign
+        numeric_chars = ''.join(c for c in value if c.isdigit() or c == '.' or c == '-')
+        
+        try:
+            return float(numeric_chars) if numeric_chars else 0.0
+        except ValueError:
+            _LOGGER.warning("Could not convert '%s' to float, using 0.0 instead", value)
+            return 0.0
+        
     def _fetch_random_record(self):
         """Fetch a random record."""
         # Implement rate limiting

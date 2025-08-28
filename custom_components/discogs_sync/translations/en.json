@@ -25,7 +25,7 @@
     "step": {
       "init": {
         "title": "Configure Discogs Sync",
-        "description": "Update intervals are in minutes",
+        "description": "Configure how frequently Discogs data is automatically updated. Even when automatic updates are disabled, you can always use the refresh buttons to manually update data.\n\n{update_info}",
         "data": {
           "enable_scheduled_updates": "Enable automatic updates",
           "global_update_interval": "Default update interval (minutes)",
