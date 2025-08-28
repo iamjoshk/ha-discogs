@@ -1,7 +1,7 @@
-# HA Discogs - Home Assistant Discogs Integration
+# Discogs Sync - Home Assistant Discogs Integration
 
 [![hacs_badge](https://img.shields.io/badge/HACS-Custom-orange.svg)](https://github.com/custom-components/hacs)
-[![GitHub release (latest by date)](https://img.shields.io/github/v/release/iamjoshk/ha-discogs)](https://github.com/iamjoshk/ha-discogs/releases)
+[![GitHub release (latest by date)](https://img.shields.io/github/v/release/iamjoshk/discogs_sync)](https://github.com/iamjoshk/discogs_sync/releases)
 
 This integration brings your full Discogs collection into Home Assistant, expanding on the legacy core Discogs integration. It provides sensors for collection size, wantlist size, collection value, and a random record feature. It also includes an action that can fetch your entire collection and make it available for display using cards like flex-table-card or downloaded as a JSON file.
 
@@ -11,6 +11,7 @@ This integration brings your full Discogs collection into Home Assistant, expand
 - Wantlist count sensor
 - Collection value sensors (minimum, median, maximum)
 - Random record sensor with details and artwork
+- Buttons to refresh each data for each API endpoint.
 - Rate limit monitor
 - Action that returns collection data for use in dashboards
 - Support for flex-table-card integration
@@ -19,20 +20,22 @@ This integration brings your full Discogs collection into Home Assistant, expand
 
 ### HACS Installation (Recommended)
 
+[![Open your Home Assistant instance and open a repository inside the Home Assistant Community Store.](https://my.home-assistant.io/badges/hacs_repository.svg)](https://my.home-assistant.io/redirect/hacs_repository/?owner=iamjoshk&repository=https%3A%2F%2Fgithub.com%2Fiamjoshk%2Fdiscogs_sync&category=integration)
+
 1. Make sure you have [HACS](https://hacs.xyz/) installed
 2. Add this repository as a custom repository in HACS:
    - Go to HACS in Home Assistant
    - Click the three dots in the upper right corner
    - Select "Custom repositories"
-   - Add `https://github.com/iamjoshk/ha-discogs` with category "Integration"
+   - Add `https://github.com/iamjoshk/discogs_sync` with category "Integration"
 3. Click "Add"
 4. Then download the add-on
 5. Restart Home Assistant
 
 ### Manual Installation
 
-1. Download the latest release from the [releases page](https://github.com/iamjoshk/ha-discogs/releases)
-2. Unpack the release and copy the `custom_components/ha_discogs` directory into your Home Assistant's `custom_components` directory
+1. Download the latest release from the [releases page](https://github.com/iamjoshk/discogs_sync/releases)
+2. Unpack the release and copy the `custom_components/discogs_sync` directory into your Home Assistant's `custom_components` directory
 3. Restart Home Assistant
 
 ## Configuration
@@ -41,7 +44,7 @@ This integration brings your full Discogs collection into Home Assistant, expand
 
 1. In Home Assistant, go to **Settings** > **Integrations**
 2. Click the **+ ADD INTEGRATION** button
-3. Search for "HA Discogs" and select it
+3. Search for "Discogs Sync" and select it
 4. Enter your Discogs API token
    - You can get your token from your [Discogs Developer Settings](https://www.discogs.com/settings/developers)
 5. Click "Submit"
@@ -55,13 +58,17 @@ To get your Discogs API token:
 3. Generate a personal access token
 4. Copy the token and use it during integration setup
 
+### Integration Settings
+
+During integration set up, and later using the settings gear in the integration, you can set the update interval for all sensors or choose to disable automatic sensor updates. Whether the automatic updates are enabled or not, you can use the refresh buttons to update the data for each API endpoint. If you disable the automatic updates, then you can use automations to press the refresh buttons and refresh data from each endpoint at any interval you decide.
+
 ## Available Actions
 
 Note: the data returned even for small collections will exceed the limit (65535 characters) of entity attributes, so the action responses are returned as responses only with an option to download the response as a JSON file.
 
 The response can be used as a variable in a script or automation.
 
-### Download Collection Action - ha_discogs.download_collection
+### Download Collection Action - discogs_sync.download_collection
 
 This action fetches your complete Discogs collection and can optionally save it to a JSON file.
 
@@ -73,7 +80,7 @@ Returns:
 - Your complete collection data
 
 
-### Download Wantlist Action - ha_discogs.download_wantlist
+### Download Wantlist Action - discogs_sync.download_wantlist
 
 This action fetches your complete Discogs wantlist and can optionally save it to a JSON file.
 
@@ -97,7 +104,7 @@ As an action directly:
 type: custom:flex-table-card
 title: My Discogs Collection
 search: true
-action: ha_discogs.download_collection
+action: discogs_sync.download_collection
 entities: []
 sort_by:
   - Artists
@@ -128,7 +135,7 @@ As a script:
 Script:
 ```
 sequence:
-  - action: ha_discogs.download_wantlist
+  - action: discogs_sync.download_wantlist
     data: {}
     response_variable: discogs
   - variables:
@@ -171,19 +178,23 @@ columns:
     data: collection.styles
 ```
 
+
+Sometimes data from Discogs is incomplete or null, which causes flex-table-card to display `undefinedundefinedundefined` in the cell. You can mitigate this by using `modify: if(x.length == 0){""}else{x}` in columns.
+
+
 ## Notes
 
-- The integration tries to respect [Discogs' API rate limits](https://www.discogs.com/developers/#page:home,header:home-rate-limiting) by adding delays between API calls (60 requests per minute for authenticated calls). Sensors will update every 5 minutes automatically.
+- The integration tries to respect [Discogs' API rate limits](https://www.discogs.com/developers/#page:home,header:home-rate-limiting) by adding delays between API calls (60 requests per minute for authenticated calls).
 - When using the download actions with large collections or wantlists, it may take some time to complete.
 - A binary sensor is created to monitor rate limit status. 
-- The actions can only be called once every 30 seconds to try and reduce rate limit restrictions.
+- The actions can only be called once every 10 seconds to try and reduce rate limit restrictions.
 
 ## Troubleshooting
 
 - If you see "Rate limit exceeded" warnings, wait 60 seconds before making another request
 - The rate limit binary sensor will show "Problem" when rate limits are exceeded and includes information about remaining limits in the attributes.
 - Make sure your Discogs token has the proper permissions
-- Editing flex-table-card calls the action repeatedly, so the data may not load until you save, wait 30+ seconds, and then refresh the browswer.
+- Editing flex-table-card calls the action repeatedly, so the data may not load until you save, wait 10+ seconds, and then refresh the browswer.
 
 ## Credits and Inspiration
 

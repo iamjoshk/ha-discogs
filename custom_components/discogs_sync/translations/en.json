@@ -1,0 +1,72 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "Set up Discogs Sync Integration",
+        "description": "Enter your Discogs API token and configure update settings.",
+        "data": {
+          "token": "Discogs API Token",
+          "name": "Name",
+          "enable_scheduled_updates": "Enable automatic updates",
+          "global_update_interval": "Update interval (minutes)"
+        }
+      }
+    },
+    "error": {
+      "cannot_connect": "Failed to connect to Discogs API",
+      "invalid_auth": "Invalid authentication token",
+      "unknown": "Unexpected error"
+    },
+    "abort": {
+      "already_configured": "Device is already configured"
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "Configure Discogs Integration",
+        "description": "Configure update behavior for Discogs sensors.",
+        "data": {
+          "enable_scheduled_updates": "Enable automatic updates",
+          "global_update_interval": "Update interval (minutes)"
+        }
+      }
+    }
+  },
+  "entity": {
+    "button": {
+      "refresh_collection": {
+        "name": "Refresh Collection"
+      },
+      "refresh_wantlist": {
+        "name": "Refresh Wantlist" 
+      },
+      "refresh_collection_value": {
+        "name": "Refresh Collection Value"
+      },
+      "refresh_random_record": {
+        "name": "Refresh Random Record"
+      }
+    },
+    "sensor": {
+      "collection": {
+        "name": "Collection"
+      },
+      "wantlist": {
+        "name": "Wantlist"
+      },
+      "random_record": {
+        "name": "Random Record"
+      },
+      "collection_value_min": {
+        "name": "Collection Value (Min)"
+      },
+      "collection_value_median": {
+        "name": "Collection Value (Median)"
+      },
+      "collection_value_max": {
+        "name": "Collection Value (Max)"
+      }
+    }
+  }
+}

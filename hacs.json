@@ -1,3 +1,4 @@
 {
-  "name": "HA Discogs"
+  "name": "Discogs Sync",
+  "hide_default_branch": true
 }

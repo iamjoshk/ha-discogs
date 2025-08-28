@@ -1,4 +1,4 @@
-"""Services for the Discogs integration."""
+"""Services for the Discogs Sync integration."""
 import logging
 import requests
 import time
@@ -9,7 +9,7 @@ from homeassistant.core import HomeAssistant, ServiceCall, SupportsResponse
 from homeassistant.helpers.json import save_json
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator
 
-from .const import DOMAIN, USER_AGENT
+from .const import DOMAIN, USER_AGENT, DEFAULT_ACTION_DELAY
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -24,7 +24,7 @@ _LAST_SERVICE_CALL = {
     "wantlist": datetime.min
 }
 
-_MIN_SERVICE_INTERVAL = timedelta(seconds=30)
+_MIN_SERVICE_INTERVAL = timedelta(seconds=DEFAULT_ACTION_DELAY)
 
 
 def get_full_discogs_collection(username: str, token: str, coordinator=None) -> list:

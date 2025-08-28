@@ -1,4 +1,4 @@
-"""Binary sensor platform for Discogs rate limit information."""
+"""Binary sensor platform for Discogs Sync rate limit information."""
 from __future__ import annotations
 
 import datetime
@@ -7,12 +7,17 @@ from homeassistant.components.binary_sensor import (
     BinarySensorDeviceClass,
 )
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
+from homeassistant.core import HomeAssistant
+from homeassistant.helpers.entity_platform import AddEntitiesCallback
+from homeassistant.config_entries import ConfigEntry
 
 from .const import DOMAIN
 
-async def async_setup_entry(hass, config_entry, async_add_entities):
+async def async_setup_entry(
+    hass: HomeAssistant, entry: ConfigEntry, async_add_entities: AddEntitiesCallback
+) -> None:
     """Set up the binary sensor platform."""
-    coordinator = hass.data[DOMAIN][config_entry.entry_id]
+    coordinator = hass.data[DOMAIN][entry.entry_id]
     async_add_entities([DiscogsRateLimitSensor(coordinator)])
 
 class DiscogsRateLimitSensor(CoordinatorEntity, BinarySensorEntity):
@@ -34,6 +39,7 @@ class DiscogsRateLimitSensor(CoordinatorEntity, BinarySensorEntity):
     @property
     def is_on(self):
         """Return if rate limit is exceeded."""
+        # Rate limit is exceeded (problem) when the exceeded flag is True
         return self.coordinator.rate_limit_data.get("exceeded", False)
 
     @property

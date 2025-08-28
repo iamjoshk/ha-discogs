@@ -1,19 +1,23 @@
-"""The Discogs integration."""
+"""The Discogs Sync integration."""
 import logging
 import discogs_client
 
+from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import CONF_TOKEN, CONF_NAME, Platform
 from homeassistant.core import HomeAssistant
 
-from .const import DOMAIN, DEFAULT_NAME, USER_AGENT
+from .const import (
+    DOMAIN, DEFAULT_NAME, USER_AGENT, 
+    CONF_ENABLE_SCHEDULED_UPDATES, CONF_GLOBAL_UPDATE_INTERVAL
+)
 from .coordinator import DiscogsCoordinator
 from .services import async_register_services
 
 _LOGGER = logging.getLogger(__name__)
-PLATFORMS = [Platform.SENSOR, Platform.BINARY_SENSOR]
+PLATFORMS = [Platform.SENSOR, Platform.BINARY_SENSOR, Platform.BUTTON]
 
 
-async def async_setup_entry(hass: HomeAssistant, entry):
+async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry):
     """Set up Discogs from a config entry."""
     token = entry.data[CONF_TOKEN]
     
@@ -32,7 +36,11 @@ async def async_setup_entry(hass: HomeAssistant, entry):
     coordinator = DiscogsCoordinator(hass, entry)
     await coordinator.async_config_entry_first_refresh()
 
+    # Store in hass data
     hass.data.setdefault(DOMAIN, {})[entry.entry_id] = coordinator
+    
+    # Register update listener for options
+    entry.async_on_unload(entry.add_update_listener(async_options_updated))
 
     # Set up the sensor platform
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
@@ -43,7 +51,7 @@ async def async_setup_entry(hass: HomeAssistant, entry):
     return True
 
 
-async def async_unload_entry(hass: HomeAssistant, entry):
+async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry):
     """Unload a config entry."""
     # Unload platforms
     if unload_ok := await hass.config_entries.async_unload_platforms(entry, PLATFORMS):
@@ -51,5 +59,26 @@ async def async_unload_entry(hass: HomeAssistant, entry):
         hass.data[DOMAIN].pop(entry.entry_id)
         if not hass.data[DOMAIN]:  # If it's the last entry, remove the service
             hass.services.async_remove(DOMAIN, "download_collection")
+            hass.services.async_remove(DOMAIN, "download_wantlist")
             
     return unload_ok
+
+async def async_options_updated(hass: HomeAssistant, entry: ConfigEntry):
+    """Handle options update."""
+    # Get the coordinator
+    coordinator = hass.data[DOMAIN][entry.entry_id]
+    
+    # Update coordinator config with new options
+    enable_scheduled_updates = entry.options.get(CONF_ENABLE_SCHEDULED_UPDATES)
+    global_update_interval = entry.options.get(CONF_GLOBAL_UPDATE_INTERVAL)
+    
+    # Update the coordinator's configuration with the new settings
+    coordinator.async_update_config(
+        enable_scheduled_updates=enable_scheduled_updates,
+        global_update_interval=global_update_interval
+    )
+    
+    # Request a refresh with the new settings
+    await coordinator.async_request_refresh()
+    # Request a refresh with the new settings
+    await coordinator.async_request_refresh()
