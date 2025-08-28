@@ -1,4 +1,4 @@
-"""Sensor platform for Discogs."""
+"""Sensor platform for Discogs Sync."""
 from __future__ import annotations
 
 import datetime
