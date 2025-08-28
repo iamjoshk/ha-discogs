@@ -1,4 +1,3 @@
-
 """The Discogs Sync integration."""
 import logging
 import discogs_client
@@ -79,7 +78,5 @@ async def async_options_updated(hass: HomeAssistant, entry: ConfigEntry):
         global_update_interval=global_update_interval
     )
     
-    # Request a refresh with the new settings
-    await coordinator.async_request_refresh()
     # Request a refresh with the new settings
     await coordinator.async_request_refresh()

@@ -134,3 +134,28 @@ class DiscogsSensor(CoordinatorEntity, SensorEntity):
                 attrs["last_updated"] = last_updated
                 
         return attrs
+    
+    async def async_added_to_hass(self):
+        """When entity is added to hass."""
+        await super().async_added_to_hass()
+        
+        # Get initial value from coordinator data based on sensor type
+        if self.coordinator.data:
+            # Set value based on sensor type
+            if self.entity_description.key == SENSOR_COLLECTION_TYPE:
+                self._attr_native_value = self.coordinator.data.get("collection_count")
+                
+            elif self.entity_description.key == SENSOR_WANTLIST_TYPE:
+                self._attr_native_value = self.coordinator.data.get("wantlist_count")
+                
+            elif self.entity_description.key == SENSOR_RANDOM_RECORD_TYPE:
+                self._attr_native_value = self.coordinator.data.get("random_record", {}).get("title")
+                
+            elif self.entity_description.key == SENSOR_COLLECTION_VALUE_MIN_TYPE:
+                self._attr_native_value = self.coordinator.data.get("collection_value", {}).get("min")
+                
+            elif self.entity_description.key == SENSOR_COLLECTION_VALUE_MEDIAN_TYPE:
+                self._attr_native_value = self.coordinator.data.get("collection_value", {}).get("median")
+                
+            elif self.entity_description.key == SENSOR_COLLECTION_VALUE_MAX_TYPE:
+                self._attr_native_value = self.coordinator.data.get("collection_value", {}).get("max")

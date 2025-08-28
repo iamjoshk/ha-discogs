@@ -1,5 +1,7 @@
 """Data coordinator for Discogs Sync."""
+import json
 import logging
+import os
 import random
 import re
 import time
@@ -9,6 +11,7 @@ import discogs_client
 import requests
 
 from homeassistant.core import HomeAssistant, callback
+from homeassistant.helpers.storage import Store
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator
 from homeassistant.const import CONF_TOKEN, CONF_NAME
 
@@ -79,6 +82,10 @@ class DiscogsCoordinator(DataUpdateCoordinator):
                 "random_record": None
             }
         }
+        
+        # Add storage for persisting state
+        self.store = Store(hass, 1, f"{DOMAIN}_{entry.entry_id}_state")
+        self._stored_data = None
 
     @property
     def rate_limit_data(self):
@@ -100,6 +107,22 @@ class DiscogsCoordinator(DataUpdateCoordinator):
         if status_code == 429:
             self._rate_limit_data["exceeded"] = True
             self._rate_limit_data["remaining"] = 0
+
+    async def async_config_entry_first_refresh(self):
+        """First refresh with state restoration."""
+        # Try to load saved data first
+        self._stored_data = await self.store.async_load() or {}
+        
+        # If we have stored data, use it as initial data
+        if self._stored_data:
+            _LOGGER.debug("Restoring saved state data: %s", self._stored_data)
+            self._data = self._stored_data
+            self.data = self._stored_data
+        else:
+            _LOGGER.debug("No saved state data found, starting fresh")
+            
+        # Then proceed with normal refresh
+        return await super().async_config_entry_first_refresh()
 
     async def _async_update_data(self):
         """Fetch data from Discogs."""
@@ -123,6 +146,10 @@ class DiscogsCoordinator(DataUpdateCoordinator):
             if "429" in str(err) or "Too Many Requests" in str(err):
                 self._rate_limit_data["exceeded"] = True
                 self._rate_limit_data["remaining"] = 0
+    
+        # Save current data for persistence
+        await self.store.async_save(self._data)
+        _LOGGER.debug("Saved state data to persistent storage")
         
         return self._data
     
