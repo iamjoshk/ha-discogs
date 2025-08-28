@@ -1,4 +1,4 @@
-"""Binary sensor platform for Discogs rate limit information."""
+"""Binary sensor platform for Discogs Sync integration."""
 from __future__ import annotations
 
 import datetime
