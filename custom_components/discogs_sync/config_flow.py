@@ -48,73 +48,75 @@ class DiscogsOptionsFlowHandler(config_entries.OptionsFlow):
         self._config_entry = config_entry
         self._entry_data = config_entry.data
         self._entry_options = config_entry.options
+        self._enable_updates = self._entry_options.get(CONF_ENABLE_SCHEDULED_UPDATES, True)
 
     async def async_step_init(self, user_input=None):
-        """Manage the options."""
+        """First step - determine if updates are enabled."""
         if user_input is not None:
-            return self.async_create_entry(title="", data=user_input)
+            self._enable_updates = user_input[CONF_ENABLE_SCHEDULED_UPDATES]
+            
+            if not self._enable_updates:
+                # If updates disabled, save simple config
+                return self.async_create_entry(
+                    title="", 
+                    data={CONF_ENABLE_SCHEDULED_UPDATES: False}
+                )
+            else:
+                # If updates enabled, go to intervals step
+                return await self.async_step_intervals()
 
-        # Get current values with defaults
-        enable_updates = self._entry_options.get(CONF_ENABLE_SCHEDULED_UPDATES, True)
+        # Initial form with just enable/disable option
+        return self.async_show_form(
+            step_id="init",
+            data_schema=vol.Schema({
+                vol.Required(
+                    CONF_ENABLE_SCHEDULED_UPDATES,
+                    default=self._enable_updates,
+                ): bool,
+            }),
+            description_placeholders={
+                "update_info": "When automatic updates are enabled, you can configure the update intervals for each endpoint."
+            },
+        )
 
-        # Create schema based on whether updates are enabled or not
-        schema = {
-            vol.Required(
-                CONF_ENABLE_SCHEDULED_UPDATES,
-                default=enable_updates,
-                description={"suggested_value": "Enable or disable automatic updates for all endpoints"},
-            ): bool,
-        }
+    async def async_step_intervals(self, user_input=None):
+        """Second step - configure intervals if updates are enabled."""
+        if user_input is not None:
+            # Return completed form with all options
+            data = {CONF_ENABLE_SCHEDULED_UPDATES: True}
+            data.update(user_input)
+            return self.async_create_entry(title="", data=data)
 
-        # Only add interval fields if automatic updates are enabled
-        if enable_updates:
-            schema.update({
+        # Show interval configuration
+        return self.async_show_form(
+            step_id="intervals",
+            data_schema=vol.Schema({
                 vol.Optional(
                     CONF_COLLECTION_UPDATE_INTERVAL,
                     default=self._entry_options.get(
                         CONF_COLLECTION_UPDATE_INTERVAL, DEFAULT_COLLECTION_UPDATE_INTERVAL
                     ),
-                    description={"suggested_value": "Minutes between collection updates"},
                 ): vol.All(vol.Coerce(int), vol.Range(min=1)),
                 vol.Optional(
                     CONF_WANTLIST_UPDATE_INTERVAL,
                     default=self._entry_options.get(
                         CONF_WANTLIST_UPDATE_INTERVAL, DEFAULT_WANTLIST_UPDATE_INTERVAL
                     ),
-                    description={"suggested_value": "Minutes between wantlist updates"},
                 ): vol.All(vol.Coerce(int), vol.Range(min=1)),
                 vol.Optional(
                     CONF_COLLECTION_VALUE_UPDATE_INTERVAL,
                     default=self._entry_options.get(
                         CONF_COLLECTION_VALUE_UPDATE_INTERVAL, DEFAULT_COLLECTION_VALUE_UPDATE_INTERVAL
                     ),
-                    description={"suggested_value": "Minutes between collection value updates"},
                 ): vol.All(vol.Coerce(int), vol.Range(min=1)),
                 vol.Optional(
                     CONF_RANDOM_RECORD_UPDATE_INTERVAL,
                     default=self._entry_options.get(
                         CONF_RANDOM_RECORD_UPDATE_INTERVAL, DEFAULT_RANDOM_RECORD_UPDATE_INTERVAL
                     ),
-                    description={"suggested_value": "Minutes between random record updates"},
                 ): vol.All(vol.Coerce(int), vol.Range(min=1)),
-            })
-
-        return self.async_show_form(
-            step_id="init",
-            data_schema=vol.Schema(schema),
+            }),
             description_placeholders={
-                "update_info": "When automatic updates are enabled, each endpoint will be updated according to its interval. "
-                "You can set different intervals for each endpoint, or use the refresh buttons to manually update when needed."
+                "update_info": "Configure how often each endpoint should update (in minutes)"
             },
         )
-
-    async def async_step_init_form_submitted(self, user_input):
-        """Handle form submission."""
-        # If automatic updates are disabled, remove interval fields
-        if not user_input.get(CONF_ENABLE_SCHEDULED_UPDATES, True):
-            # Keep only the enable_scheduled_updates field
-            filtered_input = {CONF_ENABLE_SCHEDULED_UPDATES: False}
-        else:
-            filtered_input = user_input
-
-        return self.async_create_entry(title="", data=filtered_input)
