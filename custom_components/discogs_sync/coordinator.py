@@ -1,4 +1,4 @@
-"""Data coordinator for Discogs Sync integration."""
+"""Data coordinator for Discogs Sync."""
 import logging
 import random
 import re

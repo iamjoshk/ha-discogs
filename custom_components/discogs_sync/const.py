@@ -1,3 +1,4 @@
+
 """Constants for the Discogs Sync integration."""
 
 DOMAIN = "discogs_sync"

@@ -1,3 +1,4 @@
+
 """The Discogs Sync integration."""
 import logging
 import discogs_client
