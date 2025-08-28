@@ -177,15 +177,3 @@ class DiscogsSensor(CoordinatorEntity, SensorEntity, RestoreEntity):
                     attrs["last response"] = last_updated
                 
         return attrs
-        ]:
-            last_updated = self.coordinator.data.get("_last_updated", {}).get("collection_value")
-            if last_updated and isinstance(last_updated, str):
-                try:
-                    last_response = datetime.datetime.fromtimestamp(
-                        datetime.datetime.fromisoformat(last_updated).timestamp()
-                    ).strftime('%Y-%m-%d %H:%M:%S')
-                    attrs["last response"] = last_response
-                except (ValueError, TypeError):
-                    attrs["last response"] = last_updated
-                
-        return attrs
