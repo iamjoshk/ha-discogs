@@ -46,64 +46,61 @@ class DiscogsOptionsFlowHandler(config_entries.OptionsFlow):
 
     def __init__(self, config_entry):
         """Initialize options flow."""
-        self.config_entry = config_entry
+        # DEPRECATED: self.config_entry = config_entry
+        # Instead, store values in instance variables
+        self._config_entry = config_entry  # Use underscore prefix
+        self._entry_data = config_entry.data
+        self._entry_options = config_entry.options
 
     async def async_step_init(self, user_input=None):
         """Manage the options."""
         if user_input is not None:
             return self.async_create_entry(title="", data=user_input)
 
-        # Basic options
-        options_schema = {
-            vol.Required(
-                CONF_ENABLE_SCHEDULED_UPDATES,
-                default=self.config_entry.options.get(CONF_ENABLE_SCHEDULED_UPDATES, True),
-            ): bool,
-            vol.Required(
-                CONF_GLOBAL_UPDATE_INTERVAL,
-                description={"suggested_value": "Minutes between updates (all endpoints)"},
-                default=self.config_entry.options.get(
-                    CONF_GLOBAL_UPDATE_INTERVAL, DEFAULT_GLOBAL_UPDATE_INTERVAL
-                ),
-            ): vol.All(vol.Coerce(int), vol.Range(min=1)),
-        }
-
-        # Individual update intervals (Advanced)
-        advanced_options = {
-            vol.Optional(
-                CONF_COLLECTION_UPDATE_INTERVAL,
-                description={"suggested_value": "Minutes between collection updates"},
-                default=self.config_entry.options.get(
-                    CONF_COLLECTION_UPDATE_INTERVAL, DEFAULT_COLLECTION_UPDATE_INTERVAL
-                ),
-            ): vol.All(vol.Coerce(int), vol.Range(min=1)),
-            vol.Optional(
-                CONF_WANTLIST_UPDATE_INTERVAL,
-                description={"suggested_value": "Minutes between wantlist updates"},
-                default=self.config_entry.options.get(
-                    CONF_WANTLIST_UPDATE_INTERVAL, DEFAULT_WANTLIST_UPDATE_INTERVAL
-                ),
-            ): vol.All(vol.Coerce(int), vol.Range(min=1)),
-            vol.Optional(
-                CONF_COLLECTION_VALUE_UPDATE_INTERVAL,
-                description={"suggested_value": "Minutes between collection value updates"},
-                default=self.config_entry.options.get(
-                    CONF_COLLECTION_VALUE_UPDATE_INTERVAL, DEFAULT_COLLECTION_VALUE_UPDATE_INTERVAL
-                ),
-            ): vol.All(vol.Coerce(int), vol.Range(min=1)),
-            vol.Optional(
-                CONF_RANDOM_RECORD_UPDATE_INTERVAL,
-                description={"suggested_value": "Minutes between random record updates"},
-                default=self.config_entry.options.get(
-                    CONF_RANDOM_RECORD_UPDATE_INTERVAL, DEFAULT_RANDOM_RECORD_UPDATE_INTERVAL
-                ),
-            ): vol.All(vol.Coerce(int), vol.Range(min=1)),
-        }
-        
-        # Combine basic and advanced options
-        options_schema.update(advanced_options)
-        
+        # Use self._entry_options instead of self.config_entry.options
         return self.async_show_form(
             step_id="init",
-            data_schema=vol.Schema(options_schema)
+            data_schema=vol.Schema(
+                {
+                    vol.Required(
+                        CONF_ENABLE_SCHEDULED_UPDATES,
+                        default=self._entry_options.get(CONF_ENABLE_SCHEDULED_UPDATES, True),
+                    ): bool,
+                    vol.Required(
+                        CONF_GLOBAL_UPDATE_INTERVAL,
+                        default=self._entry_options.get(
+                            CONF_GLOBAL_UPDATE_INTERVAL, DEFAULT_GLOBAL_UPDATE_INTERVAL
+                        ),
+                    ): vol.All(vol.Coerce(int), vol.Range(min=1)),
+                    # Individual update intervals
+                    vol.Optional(
+                        CONF_COLLECTION_UPDATE_INTERVAL,
+                        description={"suggested_value": "Minutes between collection updates"},
+                        default=self._entry_options.get(
+                            CONF_COLLECTION_UPDATE_INTERVAL, DEFAULT_COLLECTION_UPDATE_INTERVAL
+                        ),
+                    ): vol.All(vol.Coerce(int), vol.Range(min=1)),
+                    vol.Optional(
+                        CONF_WANTLIST_UPDATE_INTERVAL,
+                        description={"suggested_value": "Minutes between wantlist updates"},
+                        default=self._entry_options.get(
+                            CONF_WANTLIST_UPDATE_INTERVAL, DEFAULT_WANTLIST_UPDATE_INTERVAL
+                        ),
+                    ): vol.All(vol.Coerce(int), vol.Range(min=1)),
+                    vol.Optional(
+                        CONF_COLLECTION_VALUE_UPDATE_INTERVAL,
+                        description={"suggested_value": "Minutes between collection value updates"},
+                        default=self._entry_options.get(
+                            CONF_COLLECTION_VALUE_UPDATE_INTERVAL, DEFAULT_COLLECTION_VALUE_UPDATE_INTERVAL
+                        ),
+                    ): vol.All(vol.Coerce(int), vol.Range(min=1)),
+                    vol.Optional(
+                        CONF_RANDOM_RECORD_UPDATE_INTERVAL,
+                        description={"suggested_value": "Minutes between random record updates"},
+                        default=self._entry_options.get(
+                            CONF_RANDOM_RECORD_UPDATE_INTERVAL, DEFAULT_RANDOM_RECORD_UPDATE_INTERVAL
+                        ),
+                    ): vol.All(vol.Coerce(int), vol.Range(min=1)),
+                }
+            )
         )

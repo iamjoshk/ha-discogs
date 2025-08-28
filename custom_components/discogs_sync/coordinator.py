@@ -217,14 +217,19 @@ class DiscogsCoordinator(DataUpdateCoordinator):
     async def async_update_collection_value(self):
         """Update collection value data."""
         try:
+            _LOGGER.debug("Starting collection value update")
             result = await self.hass.async_add_executor_job(self._fetch_collection_value)
             if result:
                 self._data["collection_value"] = result
                 self._data["_last_updated"]["collection_value"] = time.time()
+                _LOGGER.debug("Collection value updated successfully")
                 return True
+            else:
+                _LOGGER.warning("Collection value update returned no data")
+                return False
         except Exception as err:
             _LOGGER.error("Failed to update collection value: %s", err)
-        return False
+            return False
     
     async def async_update_random_record(self):
         """Update random record data."""
@@ -330,70 +335,64 @@ class DiscogsCoordinator(DataUpdateCoordinator):
             raise
     
     def _fetch_collection_value(self):
-        """Fetch the collection value."""
-        # Get the username without making multiple API calls
-        username = self._data.get("user")
-        if username == "Unknown":
-            identity_data = self._fetch_identity_data()
-            if identity_data:
-                username = identity_data.get("username")
-            else:
-                return None
-            
+        """Fetch collection value data."""
         # Implement rate limiting
         self._apply_rate_limiting()
         
         try:
+            # Ensure we have a client instance
+            if not hasattr(self, '_client'):
+                self._client = discogs_client.Client(USER_AGENT, user_token=self._token)
+                
+            # Use cached username if available
+            user = self._data.get("user")
+            if not user:
+                me = self._client.identity()
+                user = me.username
+                self._data["user"] = user
+            
+            # Build URL and headers for direct API call
+            collection_url = f"https://api.discogs.com/users/{user}/collection/value"
             headers = {
                 "User-Agent": USER_AGENT,
-                "Authorization": f"Discogs token={self._token}"  # Changed from self.token to self._token
-            }
-            url = f"https://api.discogs.com/users/{username}/collection/value"
-            
-            response = requests.get(url, headers=headers, timeout=10)
-            
-            # Update rate limit info
-            self.update_rate_limit_data(response.headers, response.status_code)
-            
-            if response.status_code == 429:
-                _LOGGER.warning("Rate limit exceeded while fetching collection value")
-                return None
-                
-            response.raise_for_status()
-            value_data = response.json()
-            
-            collection_value = {
-                "min": 0.0,
-                "median": 0.0,
-                "max": 0.0
+                "Authorization": f"Discogs token={self._token}"
             }
             
-            # Clean and convert values
-            value_map = {
-                "minimum": "min",
-                "median": "median", 
-                "maximum": "max"
+            # Make request through the executor
+            response = requests.get(collection_url, headers=headers)
+            response.raise_for_status()  # Raise exception for HTTP errors
+            
+            # Update rate limit data
+            self._handle_rate_limit_headers(response.headers)
+            
+            # Parse response JSON
+            data = response.json()
+            
+            # Extract values and currency symbol
+            min_value = data.get("minimum", "0.00")
+            median_value = data.get("median", "0.00")
+            max_value = data.get("maximum", "0.00")
+            currency = data.get("currency", "$")
+            
+            # Store currency symbol
+            self._data["currency_symbol"] = currency
+            
+            # Convert to numeric values
+            result = {
+                "min": float(min_value),
+                "median": float(median_value),
+                "max": float(max_value),
+                "currency": currency
             }
             
-            for api_key, data_key in value_map.items():
-                value_str = value_data.get(api_key, "0.00")
-                if isinstance(value_str, str):
-                    numeric_value_str = re.sub(r'[^\d.]', '', value_str.replace(',', ''))
-                    try:
-                        collection_value[data_key] = float(numeric_value_str)
-                    except ValueError:
-                        collection_value[data_key] = 0.0
-                else:
-                    collection_value[data_key] = 0.0
-            
-            return {
-                "collection_value": collection_value,
-                "currency_symbol": self._data["currency_symbol"]
-            }
-            
+            return result
         except Exception as err:
-            _LOGGER.error("Failed to fetch collection value: %s", err)
-            return None
+            _LOGGER.error("Error fetching collection value: %s", err)
+            # Check if it's a rate limit error
+            if isinstance(err, requests.exceptions.HTTPError) and err.response.status_code == 429:
+                self._rate_limit_data["exceeded"] = True
+                self._rate_limit_data["remaining"] = 0
+            raise
     
     def _fetch_random_record(self):
         """Fetch a random record."""

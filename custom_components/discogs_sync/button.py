@@ -7,12 +7,15 @@ from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 from homeassistant.config_entries import ConfigEntry
+import logging
 
 from .const import (
     DOMAIN, 
     ENDPOINT_COLLECTION, ENDPOINT_WANTLIST, 
     ENDPOINT_COLLECTION_VALUE, ENDPOINT_RANDOM_RECORD
 )
+
+_LOGGER = logging.getLogger(__name__)
 
 async def async_setup_entry(
     hass: HomeAssistant, entry: ConfigEntry, async_add_entities: AddEntitiesCallback
@@ -48,15 +51,25 @@ class DiscogsRefreshButton(CoordinatorEntity, ButtonEntity):
         
     async def async_press(self):
         """Handle button press."""
+        _LOGGER.debug("Button pressed for endpoint: %s", self._endpoint)
+        
         # Call the appropriate endpoint update method
-        if self._endpoint == ENDPOINT_COLLECTION:
-            await self.coordinator.async_update_collection()
-        elif self._endpoint == ENDPOINT_WANTLIST:
-            await self.coordinator.async_update_wantlist()
-        elif self._endpoint == ENDPOINT_COLLECTION_VALUE:
-            await self.coordinator.async_update_collection_value()
-        elif self._endpoint == ENDPOINT_RANDOM_RECORD:
-            await self.coordinator.async_update_random_record()
-            
-        # Update entities
-        self.coordinator.async_update_listeners()
+        try:
+            if self._endpoint == ENDPOINT_COLLECTION:
+                await self.coordinator.async_update_collection()
+            elif self._endpoint == ENDPOINT_WANTLIST:
+                await self.coordinator.async_update_wantlist()
+            elif self._endpoint == ENDPOINT_COLLECTION_VALUE:
+                _LOGGER.debug("Refreshing collection value")
+                success = await self.coordinator.async_update_collection_value()
+                _LOGGER.debug("Collection value refresh %s", "succeeded" if success else "failed")
+            elif self._endpoint == ENDPOINT_RANDOM_RECORD:
+                await self.coordinator.async_update_random_record()
+            else:
+                _LOGGER.error("Unknown endpoint: %s", self._endpoint)
+                return
+                
+            # Update entities
+            self.coordinator.async_update_listeners()
+        except Exception as err:
+            _LOGGER.error("Error refreshing %s: %s", self._endpoint, err)
