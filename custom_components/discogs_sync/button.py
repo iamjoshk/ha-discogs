@@ -30,43 +30,33 @@ async def async_setup_entry(
     async_add_entities(entities)
 
 class DiscogsRefreshButton(CoordinatorEntity, ButtonEntity):
-    """Button to refresh Discogs data by endpoint."""
-
-    _attr_entity_category = EntityCategory.DIAGNOSTIC
+    """Button for refreshing Discogs data."""
     _attr_has_entity_name = True
-
-    def __init__(self, coordinator, endpoint_type):
+    _attr_entity_category = EntityCategory.CONFIG
+    
+    def __init__(self, coordinator, endpoint):
         """Initialize the button."""
         super().__init__(coordinator)
-        
-        self._endpoint_type = endpoint_type
-        self._attr_unique_id = f"{coordinator.config_entry.entry_id}_refresh_{endpoint_type}"
-        self._attr_name = f"Refresh {endpoint_type.replace('_', ' ').title()}"
+        self._endpoint = endpoint
+        self._attr_name = f"Refresh {endpoint.replace('_', ' ').title()}"
+        self._attr_unique_id = f"{coordinator.config_entry.entry_id}_{endpoint}_refresh"
+        self._attr_icon = "mdi:refresh"
         self._attr_device_info = {
             "identifiers": {(DOMAIN, coordinator.config_entry.entry_id)},
-            "name": coordinator.name,
+            "name": coordinator.name
         }
         
-        # Icon selection based on endpoint type
-        if endpoint_type == ENDPOINT_COLLECTION:
-            self._attr_icon = "mdi:refresh"
-        elif endpoint_type == ENDPOINT_WANTLIST:
-            self._attr_icon = "mdi:refresh"
-        elif endpoint_type == ENDPOINT_COLLECTION_VALUE:
-            self._attr_icon = "mdi:refresh"
-        elif endpoint_type == ENDPOINT_RANDOM_RECORD:
-            self._attr_icon = "mdi:refresh"
-
-    async def async_press(self) -> None:
+    async def async_press(self):
         """Handle button press."""
-        if self._endpoint_type == ENDPOINT_COLLECTION:
+        # Call the appropriate endpoint update method
+        if self._endpoint == ENDPOINT_COLLECTION:
             await self.coordinator.async_update_collection()
-        elif self._endpoint_type == ENDPOINT_WANTLIST:
+        elif self._endpoint == ENDPOINT_WANTLIST:
             await self.coordinator.async_update_wantlist()
-        elif self._endpoint_type == ENDPOINT_COLLECTION_VALUE:
+        elif self._endpoint == ENDPOINT_COLLECTION_VALUE:
             await self.coordinator.async_update_collection_value()
-        elif self._endpoint_type == ENDPOINT_RANDOM_RECORD:
+        elif self._endpoint == ENDPOINT_RANDOM_RECORD:
             await self.coordinator.async_update_random_record()
-        
-        # Force coordinator to update all entities
-        await self.coordinator.async_request_refresh()
+            
+        # Update entities
+        self.coordinator.async_update_listeners()

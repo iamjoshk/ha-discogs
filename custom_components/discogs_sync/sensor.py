@@ -6,12 +6,15 @@ from homeassistant.helpers.update_coordinator import CoordinatorEntity
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.config_entries import ConfigEntry
+import logging
 
 from .const import (
     DOMAIN, SENSOR_COLLECTION_TYPE, SENSOR_WANTLIST_TYPE, SENSOR_RANDOM_RECORD_TYPE,
     SENSOR_COLLECTION_VALUE_MIN_TYPE, SENSOR_COLLECTION_VALUE_MEDIAN_TYPE,
     SENSOR_COLLECTION_VALUE_MAX_TYPE, UNIT_RECORDS, ICON_RECORD, ICON_PLAYER, ICON_CASH,
 )
+
+_LOGGER = logging.getLogger(__name__)
 
 SENSOR_TYPES: tuple[SensorEntityDescription, ...] = (
     SensorEntityDescription(
@@ -141,21 +144,29 @@ class DiscogsSensor(CoordinatorEntity, SensorEntity):
         
         # Get initial value from coordinator data based on sensor type
         if self.coordinator.data:
+            _LOGGER.debug("Initializing %s sensor from stored data", self.entity_description.key)
+            
             # Set value based on sensor type
             if self.entity_description.key == SENSOR_COLLECTION_TYPE:
                 self._attr_native_value = self.coordinator.data.get("collection_count")
+                _LOGGER.debug("Restored collection count: %s", self._attr_native_value)
                 
             elif self.entity_description.key == SENSOR_WANTLIST_TYPE:
                 self._attr_native_value = self.coordinator.data.get("wantlist_count")
+                _LOGGER.debug("Restored wantlist count: %s", self._attr_native_value)
                 
             elif self.entity_description.key == SENSOR_RANDOM_RECORD_TYPE:
                 self._attr_native_value = self.coordinator.data.get("random_record", {}).get("title")
+                _LOGGER.debug("Restored random record: %s", self._attr_native_value)
                 
             elif self.entity_description.key == SENSOR_COLLECTION_VALUE_MIN_TYPE:
                 self._attr_native_value = self.coordinator.data.get("collection_value", {}).get("min")
+                _LOGGER.debug("Restored collection value min: %s", self._attr_native_value)
                 
             elif self.entity_description.key == SENSOR_COLLECTION_VALUE_MEDIAN_TYPE:
                 self._attr_native_value = self.coordinator.data.get("collection_value", {}).get("median")
+                _LOGGER.debug("Restored collection value median: %s", self._attr_native_value)
                 
             elif self.entity_description.key == SENSOR_COLLECTION_VALUE_MAX_TYPE:
                 self._attr_native_value = self.coordinator.data.get("collection_value", {}).get("max")
+                _LOGGER.debug("Restored collection value max: %s", self._attr_native_value)

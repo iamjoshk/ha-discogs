@@ -18,7 +18,12 @@ from homeassistant.const import CONF_TOKEN, CONF_NAME
 from .const import (
     DOMAIN, DEFAULT_NAME, USER_AGENT,
     CONF_ENABLE_SCHEDULED_UPDATES, CONF_GLOBAL_UPDATE_INTERVAL,
-    DEFAULT_GLOBAL_UPDATE_INTERVAL
+    DEFAULT_GLOBAL_UPDATE_INTERVAL,
+    CONF_COLLECTION_UPDATE_INTERVAL,
+    CONF_WANTLIST_UPDATE_INTERVAL,
+    CONF_COLLECTION_VALUE_UPDATE_INTERVAL,
+    CONF_RANDOM_RECORD_UPDATE_INTERVAL,
+    DEFAULT_RANDOM_RECORD_UPDATE_INTERVAL
 )
 
 _LOGGER = logging.getLogger(__name__)
@@ -28,85 +33,64 @@ class DiscogsCoordinator(DataUpdateCoordinator):
 
     def __init__(self, hass: HomeAssistant, entry):
         """Initialize coordinator."""
-        # Check if scheduled updates are enabled
-        self.enable_scheduled_updates = entry.options.get(
-            CONF_ENABLE_SCHEDULED_UPDATES, 
-            entry.data.get(CONF_ENABLE_SCHEDULED_UPDATES, True)
-        )
+        self._data = {
+            "collection_count": 0,
+            "wantlist_count": 0,
+            "collection_value": {"min": 0, "median": 0, "max": 0},
+            "random_record": {"title": None, "data": {}},
+            "_last_updated": {
+                "collection": None,
+                "wantlist": None, 
+                "collection_value": None,
+                "random_record": None
+            },
+            "user": None,
+            "currency_symbol": "$"  # Default
+        }
         
-        # Global update interval (only used if scheduled updates are enabled)
-        update_interval = timedelta(minutes=entry.options.get(
-            CONF_GLOBAL_UPDATE_INTERVAL, 
-            entry.data.get(CONF_GLOBAL_UPDATE_INTERVAL, DEFAULT_GLOBAL_UPDATE_INTERVAL)
-        )) if self.enable_scheduled_updates else None
-
+        # Store update intervals for each endpoint (in seconds)
+        self._update_intervals = {
+            "collection": entry.options.get(CONF_COLLECTION_UPDATE_INTERVAL, 
+                                        entry.options.get(CONF_GLOBAL_UPDATE_INTERVAL, 
+                                                         DEFAULT_GLOBAL_UPDATE_INTERVAL)) * 60,
+            "wantlist": entry.options.get(CONF_WANTLIST_UPDATE_INTERVAL, 
+                                      entry.options.get(CONF_GLOBAL_UPDATE_INTERVAL, 
+                                                       DEFAULT_GLOBAL_UPDATE_INTERVAL)) * 60,
+            "collection_value": entry.options.get(CONF_COLLECTION_VALUE_UPDATE_INTERVAL, 
+                                             entry.options.get(CONF_GLOBAL_UPDATE_INTERVAL, 
+                                                              DEFAULT_GLOBAL_UPDATE_INTERVAL)) * 60,
+            "random_record": entry.options.get(CONF_RANDOM_RECORD_UPDATE_INTERVAL, 
+                                          DEFAULT_RANDOM_RECORD_UPDATE_INTERVAL) * 60
+        }
+        
+        # Store API client
+        self._token = entry.data[CONF_TOKEN]
+        self._client = discogs_client.Client(USER_AGENT, user_token=self._token)
+        self._name = entry.data.get(CONF_NAME, DEFAULT_NAME)
+        
+        # For rate limiting
+        self._rate_limit_data = {
+            "limit": 60,
+            "remaining": 60,
+            "exceeded": False
+        }
+        
+        # For scheduled updates
+        self.enable_scheduled_updates = entry.options.get(CONF_ENABLE_SCHEDULED_UPDATES, True)
+        self.global_update_interval = entry.options.get(CONF_GLOBAL_UPDATE_INTERVAL, DEFAULT_GLOBAL_UPDATE_INTERVAL)
+        
+        # Add store for persistence
+        self.store = Store(hass, 1, f"{DOMAIN}_{entry.entry_id}_state")
+        self._stored_data = None
+        
+        # Initialize with standard update interval but we'll handle individual endpoint updates
+        update_interval = timedelta(minutes=self.global_update_interval)
         super().__init__(
             hass,
             _LOGGER,
             name=DOMAIN,
             update_interval=update_interval,
         )
-        
-        self.token = entry.data[CONF_TOKEN]
-        self.name = entry.data.get(CONF_NAME, DEFAULT_NAME)
-        self.config_entry = entry
-        self._client = discogs_client.Client(USER_AGENT, user_token=self.token)
-        self._rate_limit_data = {
-            "total": 60,       # Default for authenticated requests
-            "used": 0,
-            "remaining": 60,
-            "exceeded": False,
-            "last_updated": None
-        }
-        
-        # Store data for each endpoint separately
-        self._data = {
-            "user": "Unknown",
-            "collection_count": 0,
-            "wantlist_count": 0,
-            "collection_value": {
-                "min": 0.0,
-                "median": 0.0,
-                "max": 0.0
-            },
-            "currency_symbol": "$",
-            "random_record": {
-                "title": None,
-                "data": None
-            },
-            # Last updated timestamps for each endpoint
-            "_last_updated": {
-                "collection": None,
-                "wantlist": None,
-                "collection_value": None,
-                "random_record": None
-            }
-        }
-        
-        # Add storage for persisting state
-        self.store = Store(hass, 1, f"{DOMAIN}_{entry.entry_id}_state")
-        self._stored_data = None
-
-    @property
-    def rate_limit_data(self):
-        """Return current rate limit data."""
-        return self._rate_limit_data
-
-    def update_rate_limit_data(self, headers, status_code=None):
-        """Update rate limit data from response headers."""
-        if "X-Discogs-Ratelimit" in headers:
-            self._rate_limit_data["total"] = int(headers["X-Discogs-Ratelimit"])
-        if "X-Discogs-Ratelimit-Used" in headers:
-            self._rate_limit_data["used"] = int(headers["X-Discogs-Ratelimit-Used"])
-        if "X-Discogs-Ratelimit-Remaining" in headers:
-            self._rate_limit_data["remaining"] = int(headers["X-Discogs-Ratelimit-Remaining"])
-        
-        self._rate_limit_data["last_updated"] = time.time()
-        
-        # Set exceeded flag if we got a 429 response
-        if status_code == 429:
-            self._rate_limit_data["exceeded"] = True
-            self._rate_limit_data["remaining"] = 0
 
     async def async_config_entry_first_refresh(self):
         """First refresh with state restoration."""
@@ -125,19 +109,35 @@ class DiscogsCoordinator(DataUpdateCoordinator):
         return await super().async_config_entry_first_refresh()
 
     async def _async_update_data(self):
-        """Fetch data from Discogs."""
+        """Fetch data from Discogs but only update endpoints as needed."""
         if not self.enable_scheduled_updates:
             # If scheduled updates are disabled, just return the current data
             return self._data
             
         try:
-            # Update all endpoints
-            await self.async_update_collection()
-            await self.async_update_wantlist()
-            await self.async_update_collection_value()
-            await self.async_update_random_record()
+            current_time = time.time()
             
-            # Reset rate limit exceeded flag if we successfully fetched all data
+            # Check each endpoint to see if it needs updating
+            for endpoint in ["collection", "wantlist", "collection_value", "random_record"]:
+                last_updated = self._data.get("_last_updated", {}).get(endpoint)
+                interval = self._update_intervals.get(endpoint)
+                
+                # Update if never updated or if enough time has passed
+                if last_updated is None or (current_time - last_updated) >= interval:
+                    _LOGGER.debug(f"Updating {endpoint} endpoint - due for update")
+                    
+                    if endpoint == "collection":
+                        await self.async_update_collection()
+                    elif endpoint == "wantlist":
+                        await self.async_update_wantlist()
+                    elif endpoint == "collection_value":
+                        await self.async_update_collection_value()
+                    elif endpoint == "random_record":
+                        await self.async_update_random_record()
+                else:
+                    _LOGGER.debug(f"Skipping {endpoint} update - not due yet")
+            
+            # Reset rate limit exceeded flag if we successfully reached this point
             self._rate_limit_data["exceeded"] = False
             
         except Exception as err:
@@ -146,21 +146,56 @@ class DiscogsCoordinator(DataUpdateCoordinator):
             if "429" in str(err) or "Too Many Requests" in str(err):
                 self._rate_limit_data["exceeded"] = True
                 self._rate_limit_data["remaining"] = 0
-    
+        
         # Save current data for persistence
         await self.store.async_save(self._data)
         _LOGGER.debug("Saved state data to persistent storage")
         
         return self._data
     
+    @callback
+    def async_update_config(self, enable_scheduled_updates=None, global_update_interval=None, 
+                       collection_interval=None, wantlist_interval=None, 
+                       collection_value_interval=None, random_record_interval=None):
+        """Update coordinator configuration."""
+        if enable_scheduled_updates is not None:
+            self.enable_scheduled_updates = enable_scheduled_updates
+            
+        if global_update_interval is not None:
+            self.global_update_interval = global_update_interval
+            
+            # Update endpoints that don't have their own interval set
+            if collection_interval is None:
+                self._update_intervals["collection"] = global_update_interval * 60
+        
+            if wantlist_interval is None:
+                self._update_intervals["wantlist"] = global_update_interval * 60
+            
+            if collection_value_interval is None:
+                self._update_intervals["collection_value"] = global_update_interval * 60
+        
+            # Update the coordinator's general update interval
+            self.update_interval = timedelta(minutes=global_update_interval)
+    
+        # Update individual intervals if provided
+        if collection_interval is not None:
+            self._update_intervals["collection"] = collection_interval * 60
+        
+        if wantlist_interval is not None:
+            self._update_intervals["wantlist"] = wantlist_interval * 60
+        
+        if collection_value_interval is not None:
+            self._update_intervals["collection_value"] = collection_value_interval * 60
+        
+        if random_record_interval is not None:
+            self._update_intervals["random_record"] = random_record_interval * 60
+
     async def async_update_collection(self):
         """Update collection data."""
         try:
-            # Use async_add_executor_job for ALL API calls
-            identity_data = await self.hass.async_add_executor_job(self._fetch_identity_data)
-            if identity_data:
-                self._data["user"] = identity_data.get("username")
-                self._data["collection_count"] = identity_data.get("collection_count")
+            result = await self.hass.async_add_executor_job(self._fetch_collection)
+            if result is not None:
+                self._data["collection_count"] = result
                 self._data["_last_updated"]["collection"] = time.time()
                 return True
         except Exception as err:
@@ -170,11 +205,9 @@ class DiscogsCoordinator(DataUpdateCoordinator):
     async def async_update_wantlist(self):
         """Update wantlist data."""
         try:
-            # Use async_add_executor_job for ALL API calls
-            identity_data = await self.hass.async_add_executor_job(self._fetch_identity_data)
-            if identity_data:
-                self._data["user"] = identity_data.get("username")
-                self._data["wantlist_count"] = identity_data.get("wantlist_count")
+            result = await self.hass.async_add_executor_job(self._fetch_wantlist)
+            if result is not None:
+                self._data["wantlist_count"] = result
                 self._data["_last_updated"]["wantlist"] = time.time()
                 return True
         except Exception as err:
@@ -186,8 +219,7 @@ class DiscogsCoordinator(DataUpdateCoordinator):
         try:
             result = await self.hass.async_add_executor_job(self._fetch_collection_value)
             if result:
-                self._data["collection_value"] = result["collection_value"]
-                self._data["currency_symbol"] = result["currency_symbol"]
+                self._data["collection_value"] = result
                 self._data["_last_updated"]["collection_value"] = time.time()
                 return True
         except Exception as err:
@@ -412,18 +444,38 @@ class DiscogsCoordinator(DataUpdateCoordinator):
         return None
         
     @callback
-    def async_update_config(self, enable_scheduled_updates=None, global_update_interval=None):
+    def async_update_config(self, enable_scheduled_updates=None, global_update_interval=None, 
+                       collection_interval=None, wantlist_interval=None, 
+                       collection_value_interval=None, random_record_interval=None):
         """Update the coordinator configuration."""
         if enable_scheduled_updates is not None:
             self.enable_scheduled_updates = enable_scheduled_updates
             
-        if global_update_interval is not None and self.enable_scheduled_updates:
-            self.update_interval = timedelta(minutes=global_update_interval)
-        elif not self.enable_scheduled_updates:
-            self.update_interval = None
+        if global_update_interval is not None:
+            self.global_update_interval = global_update_interval
             
-        _LOGGER.debug(
-            "Updated coordinator config: scheduled updates=%s, interval=%s",
-            self.enable_scheduled_updates,
-            self.update_interval
-        )
+            # Update endpoints that don't have their own interval set
+            if collection_interval is None:
+                self._update_intervals["collection"] = global_update_interval * 60
+        
+            if wantlist_interval is None:
+                self._update_intervals["wantlist"] = global_update_interval * 60
+            
+            if collection_value_interval is None:
+                self._update_intervals["collection_value"] = global_update_interval * 60
+        
+            # Update the coordinator's general update interval
+            self.update_interval = timedelta(minutes=global_update_interval)
+    
+        # Update individual intervals if provided
+        if collection_interval is not None:
+            self._update_intervals["collection"] = collection_interval * 60
+        
+        if wantlist_interval is not None:
+            self._update_intervals["wantlist"] = wantlist_interval * 60
+        
+        if collection_value_interval is not None:
+            self._update_intervals["collection_value"] = collection_value_interval * 60
+        
+        if random_record_interval is not None:
+            self._update_intervals["random_record"] = random_record_interval * 60

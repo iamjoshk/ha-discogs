@@ -4,7 +4,11 @@ from homeassistant.const import CONF_TOKEN, CONF_NAME
 from .const import (
     DOMAIN, DEFAULT_NAME, 
     CONF_ENABLE_SCHEDULED_UPDATES, CONF_GLOBAL_UPDATE_INTERVAL,
-    DEFAULT_GLOBAL_UPDATE_INTERVAL
+    DEFAULT_GLOBAL_UPDATE_INTERVAL,
+    CONF_COLLECTION_UPDATE_INTERVAL, DEFAULT_COLLECTION_UPDATE_INTERVAL,
+    CONF_WANTLIST_UPDATE_INTERVAL, DEFAULT_WANTLIST_UPDATE_INTERVAL,
+    CONF_COLLECTION_VALUE_UPDATE_INTERVAL, DEFAULT_COLLECTION_VALUE_UPDATE_INTERVAL,
+    CONF_RANDOM_RECORD_UPDATE_INTERVAL, DEFAULT_RANDOM_RECORD_UPDATE_INTERVAL
 )
 
 class DiscogsConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
@@ -45,25 +49,49 @@ class DiscogsOptionsFlowHandler(config_entries.OptionsFlow):
         self.config_entry = config_entry
 
     async def async_step_init(self, user_input=None):
-        """Manage options."""
+        """Manage the options."""
         if user_input is not None:
             return self.async_create_entry(title="", data=user_input)
 
-        options = {
-            vol.Optional(
-                CONF_ENABLE_SCHEDULED_UPDATES,
-                default=self.config_entry.options.get(
-                    CONF_ENABLE_SCHEDULED_UPDATES, 
-                    self.config_entry.data.get(CONF_ENABLE_SCHEDULED_UPDATES, True)
-                ),
-            ): bool,
-            vol.Optional(
-                CONF_GLOBAL_UPDATE_INTERVAL,
-                default=self.config_entry.options.get(
-                    CONF_GLOBAL_UPDATE_INTERVAL, 
-                    self.config_entry.data.get(CONF_GLOBAL_UPDATE_INTERVAL, DEFAULT_GLOBAL_UPDATE_INTERVAL)
-                ),
-            ): int,
-        }
-
-        return self.async_show_form(step_id="init", data_schema=vol.Schema(options))
+        return self.async_show_form(
+            step_id="init",
+            data_schema=vol.Schema(
+                {
+                    vol.Required(
+                        CONF_ENABLE_SCHEDULED_UPDATES,
+                        default=self.config_entry.options.get(CONF_ENABLE_SCHEDULED_UPDATES, True),
+                    ): bool,
+                    vol.Required(
+                        CONF_GLOBAL_UPDATE_INTERVAL,
+                        default=self.config_entry.options.get(
+                            CONF_GLOBAL_UPDATE_INTERVAL, DEFAULT_GLOBAL_UPDATE_INTERVAL
+                        ),
+                    ): int,
+                    # Advanced options - individual endpoint intervals
+                    vol.Optional(
+                        CONF_COLLECTION_UPDATE_INTERVAL,
+                        default=self.config_entry.options.get(
+                            CONF_COLLECTION_UPDATE_INTERVAL, DEFAULT_COLLECTION_UPDATE_INTERVAL
+                        ),
+                    ): int,
+                    vol.Optional(
+                        CONF_WANTLIST_UPDATE_INTERVAL,
+                        default=self.config_entry.options.get(
+                            CONF_WANTLIST_UPDATE_INTERVAL, DEFAULT_WANTLIST_UPDATE_INTERVAL
+                        ),
+                    ): int,
+                    vol.Optional(
+                        CONF_COLLECTION_VALUE_UPDATE_INTERVAL,
+                        default=self.config_entry.options.get(
+                            CONF_COLLECTION_VALUE_UPDATE_INTERVAL, DEFAULT_COLLECTION_VALUE_UPDATE_INTERVAL
+                        ),
+                    ): int,
+                    vol.Optional(
+                        CONF_RANDOM_RECORD_UPDATE_INTERVAL,
+                        default=self.config_entry.options.get(
+                            CONF_RANDOM_RECORD_UPDATE_INTERVAL, DEFAULT_RANDOM_RECORD_UPDATE_INTERVAL
+                        ),
+                    ): int,
+                }
+            )
+        )
