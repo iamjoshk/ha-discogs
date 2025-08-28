@@ -1,4 +1,4 @@
-"""Button platform for Discogs integration."""
+"""Button platform for Discogs Sync integration."""
 from __future__ import annotations
 
 from homeassistant.components.button import ButtonEntity
