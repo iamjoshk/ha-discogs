@@ -3,6 +3,7 @@ from __future__ import annotations
 
 from homeassistant.components.sensor import SensorEntity, SensorEntityDescription
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
+from homeassistant.helpers.restore_state import RestoreEntity
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.config_entries import ConfigEntry
@@ -57,7 +58,7 @@ async def async_setup_entry(
     entities = [DiscogsSensor(coordinator, description) for description in SENSOR_TYPES]
     async_add_entities(entities)
 
-class DiscogsSensor(CoordinatorEntity, SensorEntity):
+class DiscogsSensor(CoordinatorEntity, SensorEntity, RestoreEntity):
     """A sensor implementation for the Discogs integration."""
     _attr_has_entity_name = True
 
@@ -112,27 +113,37 @@ class DiscogsSensor(CoordinatorEntity, SensorEntity):
         # Include last updated timestamp for relevant endpoints
         if self.entity_description.key == SENSOR_COLLECTION_TYPE:
             last_updated = self.coordinator.data.get("_last_updated", {}).get("collection")
-            if last_updated:
-                last_updated = datetime.datetime.fromtimestamp(
-                    datetime.datetime.fromisoformat(last_updated).timestamp()
-                ).strftime('%Y-%m-%d %H:%M:%S')
-                attrs["last_updated"] = last_updated
+            if last_updated and isinstance(last_updated, str):
+                try:
+                    last_updated = datetime.datetime.fromtimestamp(
+                        datetime.datetime.fromisoformat(last_updated).timestamp()
+                    ).strftime('%Y-%m-%d %H:%M:%S')
+                    attrs["last_updated"] = last_updated
+                except (ValueError, TypeError):
+                    # If conversion fails, use the raw value
+                    attrs["last_updated"] = last_updated
                 
         elif self.entity_description.key == SENSOR_WANTLIST_TYPE:
             last_updated = self.coordinator.data.get("_last_updated", {}).get("wantlist")
-            if last_updated:
-                last_updated = datetime.datetime.fromtimestamp(
-                    datetime.datetime.fromisoformat(last_updated).timestamp()
-                ).strftime('%Y-%m-%d %H:%M:%S')
-                attrs["last_updated"] = last_updated
+            if last_updated and isinstance(last_updated, str):
+                try:
+                    last_updated = datetime.datetime.fromtimestamp(
+                        datetime.datetime.fromisoformat(last_updated).timestamp()
+                    ).strftime('%Y-%m-%d %H:%M:%S')
+                    attrs["last_updated"] = last_updated
+                except (ValueError, TypeError):
+                    attrs["last_updated"] = last_updated
                 
         elif self.entity_description.key == SENSOR_RANDOM_RECORD_TYPE:
             last_updated = self.coordinator.data.get("_last_updated", {}).get("random_record")
-            if last_updated:
-                last_updated = datetime.datetime.fromtimestamp(
-                    datetime.datetime.fromisoformat(last_updated).timestamp()
-                ).strftime('%Y-%m-%d %H:%M:%S')
-                attrs["last_updated"] = last_updated
+            if last_updated and isinstance(last_updated, str):
+                try:
+                    last_updated = datetime.datetime.fromtimestamp(
+                        datetime.datetime.fromisoformat(last_updated).timestamp()
+                    ).strftime('%Y-%m-%d %H:%M:%S')
+                    attrs["last_updated"] = last_updated
+                except (ValueError, TypeError):
+                    attrs["last_updated"] = last_updated
                 
         elif self.entity_description.key in [
             SENSOR_COLLECTION_VALUE_MIN_TYPE,
@@ -140,10 +151,27 @@ class DiscogsSensor(CoordinatorEntity, SensorEntity):
             SENSOR_COLLECTION_VALUE_MAX_TYPE
         ]:
             last_updated = self.coordinator.data.get("_last_updated", {}).get("collection_value")
-            if last_updated:
-                last_updated = datetime.datetime.fromtimestamp(
-                    datetime.datetime.fromisoformat(last_updated).timestamp()
-                ).strftime('%Y-%m-%d %H:%M:%S')
-                attrs["last_updated"] = last_updated
+            if last_updated and isinstance(last_updated, str):
+                try:
+                    last_updated = datetime.datetime.fromtimestamp(
+                        datetime.datetime.fromisoformat(last_updated).timestamp()
+                    ).strftime('%Y-%m-%d %H:%M:%S')
+                    attrs["last_updated"] = last_updated
+                except (ValueError, TypeError):
+                    attrs["last_updated"] = last_updated
                 
         return attrs
+
+    async def async_added_to_hass(self) -> None:
+        """Handle entity which will be added."""
+        await super().async_added_to_hass()
+        
+        # Restore previous state if available
+        if (last_state := await self.async_get_last_state()) is not None:
+            self._attr_native_value = last_state.state
+            
+            # Restore attributes if they exist
+            if "user" in last_state.attributes:
+                self._attr_extra_state_attributes = {
+                    key: value for key, value in last_state.attributes.items()
+                }
