@@ -105,23 +105,36 @@ class DiscogsCoordinator(DataUpdateCoordinator):
         _LOGGER.debug("Starting data update. Current intervals: %s", self._endpoint_intervals)
         
         try:
-            # Get user identity first (includes basic collection/wantlist counts)
-            # This is a lightweight call that gives us username, collection count, wantlist count, and currency
+            # Get user identity first for username and currency
             identity = await self.hass.async_add_executor_job(self.api_client.get_user_identity)
             if identity:
-                self._data["user"] = identity["username"]
-                self._data["collection_count"] = identity["collection_count"]
-                self._data["wantlist_count"] = identity["wantlist_count"]
+                username = identity["username"]
+                self._data["user"] = username
                 self._data["collection_value"]["currency"] = identity["currency"]
-                self._data["last_updated"]["collection"] = time.time()
-                self._data["last_updated"]["wantlist"] = time.time()
                 
-                _LOGGER.debug("Updated identity: user=%s, collection=%s, wantlist=%s", 
-                            identity["username"], identity["collection_count"], identity["wantlist_count"])
+                _LOGGER.debug("Got user identity: username=%s", username)
                 
-                # Update other endpoints if needed
-                username = self._data["user"]
+                # Get fresh collection and wantlist counts using specific endpoints (same as manual refresh)
                 if username and username != "Unknown":
+                    # Get collection count
+                    collection_count = await self.hass.async_add_executor_job(
+                        self.api_client.get_collection_count, username
+                    )
+                    if collection_count is not None:
+                        self._data["collection_count"] = collection_count
+                        self._data["last_updated"]["collection"] = time.time()
+                        _LOGGER.debug("Updated collection count: %s", collection_count)
+                    
+                    # Get wantlist count  
+                    wantlist_count = await self.hass.async_add_executor_job(
+                        self.api_client.get_wantlist_count, username
+                    )
+                    if wantlist_count is not None:
+                        self._data["wantlist_count"] = wantlist_count
+                        self._data["last_updated"]["wantlist"] = time.time()
+                        _LOGGER.debug("Updated wantlist count: %s", wantlist_count)
+                    
+                    # Update other endpoints if needed
                     await self._update_endpoints(username)
             else:
                 _LOGGER.warning("Failed to get user identity")
