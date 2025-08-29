@@ -87,8 +87,8 @@ class DiscogsSensor(CoordinatorEntity, SensorEntity):
     @property
     def native_unit_of_measurement(self) -> Optional[str]:
         """Return the unit of measurement."""
-        if self._sensor_key.startswith("value_"):
-            return self.coordinator.data.get("collection_value", {}).get("currency", "$")
+        if self._sensor_key.startswith("collection_value_"):
+            return self.coordinator.data.get("collection_value", {}).get("currency", "USD")
         return self._attr_native_unit_of_measurement
 
     @property
@@ -116,8 +116,8 @@ class DiscogsSensor(CoordinatorEntity, SensorEntity):
             "collection": "collection",
             "wantlist": "wantlist", 
             "random_record": "random_record",
-            "value_min": "collection_value",
-            "value_median": "collection_value", 
-            "value_max": "collection_value",
+            "collection_value_min": "collection_value",
+            "collection_value_median": "collection_value", 
+            "collection_value_max": "collection_value",
         }
         return mapping.get(self._sensor_key)

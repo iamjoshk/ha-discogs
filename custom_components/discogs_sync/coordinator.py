@@ -116,23 +116,41 @@ class DiscogsCoordinator(DataUpdateCoordinator):
                 
                 # Get fresh collection and wantlist counts using specific endpoints (same as manual refresh)
                 if username and username != "Unknown":
-                    # Get collection count
-                    collection_count = await self.hass.async_add_executor_job(
-                        self.api_client.get_collection_count, username
-                    )
-                    if collection_count is not None:
-                        self._data["collection_count"] = collection_count
-                        self._data["last_updated"]["collection"] = time.time()
-                        _LOGGER.debug("Updated collection count: %s", collection_count)
+                    current_time = time.time()
                     
-                    # Get wantlist count  
-                    wantlist_count = await self.hass.async_add_executor_job(
-                        self.api_client.get_wantlist_count, username
-                    )
-                    if wantlist_count is not None:
-                        self._data["wantlist_count"] = wantlist_count
-                        self._data["last_updated"]["wantlist"] = time.time()
-                        _LOGGER.debug("Updated wantlist count: %s", wantlist_count)
+                    # Check collection update interval
+                    collection_interval_minutes = self._endpoint_intervals.get("collection", 10)
+                    if collection_interval_minutes > 0:  # Only update if not disabled
+                        last_collection_update = self._data["last_updated"].get("collection", 0)
+                        collection_interval = collection_interval_minutes * 60  # Convert to seconds
+                        
+                        if current_time - last_collection_update > collection_interval:
+                            collection_count = await self.hass.async_add_executor_job(
+                                self.api_client.get_collection_count, username
+                            )
+                            if collection_count is not None:
+                                self._data["collection_count"] = collection_count
+                                self._data["last_updated"]["collection"] = current_time
+                                _LOGGER.debug("Updated collection count: %s", collection_count)
+                    else:
+                        _LOGGER.debug("Collection updates disabled (interval = 0)")
+                    
+                    # Check wantlist update interval
+                    wantlist_interval_minutes = self._endpoint_intervals.get("wantlist", 10)
+                    if wantlist_interval_minutes > 0:  # Only update if not disabled
+                        last_wantlist_update = self._data["last_updated"].get("wantlist", 0)
+                        wantlist_interval = wantlist_interval_minutes * 60  # Convert to seconds
+                        
+                        if current_time - last_wantlist_update > wantlist_interval:
+                            wantlist_count = await self.hass.async_add_executor_job(
+                                self.api_client.get_wantlist_count, username
+                            )
+                            if wantlist_count is not None:
+                                self._data["wantlist_count"] = wantlist_count
+                                self._data["last_updated"]["wantlist"] = current_time
+                                _LOGGER.debug("Updated wantlist count: %s", wantlist_count)
+                    else:
+                        _LOGGER.debug("Wantlist updates disabled (interval = 0)")
                     
                     # Update other endpoints if needed
                     await self._update_endpoints(username)
