@@ -32,7 +32,7 @@
       },
       "intervals": {
         "title": "Update Intervals",
-        "description": "{instructions}",
+        "description": "Set the update interval for each endpoint below. Values are in minutes from 0 (disabled) to 1440.",
         "data": {
           "collection_update_interval": "Collection",
           "wantlist_update_interval": "Wantlist", 

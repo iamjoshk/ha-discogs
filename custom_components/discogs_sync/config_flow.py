@@ -119,12 +119,7 @@ class DiscogsOptionsFlowHandler(config_entries.OptionsFlow):
             f"Random Record: {format_interval(current_random)}"
         )
 
-        # Show interval configuration with better descriptions
-        description_text = (
-            "Set the update interval for each endpoint below. Values are in minutes from 0 (disabled) to 1440.\n\n"
-            f"{current_intervals}"
-        )
-        
+        # Show interval configuration 
         return self.async_show_form(
             step_id="intervals",
             data_schema=vol.Schema({
@@ -145,7 +140,4 @@ class DiscogsOptionsFlowHandler(config_entries.OptionsFlow):
                     default=current_random,
                 ): vol.All(vol.Coerce(int), vol.Range(min=0, max=1440)),
             }),
-            description_placeholders={
-                "instructions": description_text
-            },
         )
