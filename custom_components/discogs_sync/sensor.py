@@ -20,9 +20,9 @@ SENSORS = [
     ("collection", "Collection", UNIT_RECORDS, ICON_RECORD),
     ("wantlist", "Wantlist", UNIT_RECORDS, ICON_RECORD), 
     ("random_record", "Random Record", None, ICON_PLAYER),
-    ("value_min", "Collection Value (Min)", None, ICON_CASH),
-    ("value_median", "Collection Value (Median)", None, ICON_CASH),
-    ("value_max", "Collection Value (Max)", None, ICON_CASH),
+    ("collection_value_min", "Collection Value (Min)", None, ICON_CASH),
+    ("collection_value_median", "Collection Value (Median)", None, ICON_CASH),
+    ("collection_value_max", "Collection Value (Max)", None, ICON_CASH),
 ]
 
 
@@ -69,11 +69,11 @@ class DiscogsSensor(CoordinatorEntity, SensorEntity):
             return value if value is not None else 0
         elif self._sensor_key == "random_record":
             return data.get("random_record", {}).get("title")
-        elif self._sensor_key == "value_min":
+        elif self._sensor_key == "collection_value_min":
             return data.get("collection_value", {}).get("min")
-        elif self._sensor_key == "value_median":
+        elif self._sensor_key == "collection_value_median":
             return data.get("collection_value", {}).get("median")
-        elif self._sensor_key == "value_max":
+        elif self._sensor_key == "collection_value_max":
             return data.get("collection_value", {}).get("max")
         
         return None
