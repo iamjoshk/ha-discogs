@@ -79,6 +79,188 @@ Parameters:
 Returns:
 - Your complete collection data
 
+Example response: 
+```
+collection:
+  - id: 8302412
+    master_id: 72316
+    master_url: https://api.discogs.com/masters/72316
+    resource_url: https://api.discogs.com/releases/8302412
+    thumb: >-
+      https://i.discogs.com/7C6ONIvFG8eJ4oMjVyk81DyWdsvsTxTcJh9I3ocFBDU/rs:fit/g:sm/q:40/h:150/w:150/czM6Ly9kaXNjb2dz/LWRhdGFiYXNlLWlt/YWdlcy9SLTgzMDI0/MTItMTQ1ODk0OTc4/OS0zNDg2LmpwZWc.jpeg
+    cover_image: >-
+      https://i.discogs.com/Xx4FZdNgsitGd1sqGnH3WokFfd2ZS67jok7ylJ5f4Ks/rs:fit/g:sm/q:90/h:598/w:600/czM6Ly9kaXNjb2dz/LWRhdGFiYXNlLWlt/YWdlcy9SLTgzMDI0/MTItMTQ1ODk0OTc4/OS0zNDg2LmpwZWc.jpeg
+    title: The Best Of Procol Harum
+    year: 0
+    formats:
+      - name: Vinyl
+        qty: "1"
+        text: CRC
+        descriptions:
+          - LP
+          - Compilation
+          - Club Edition
+          - Stereo
+    labels:
+      - name: A&M Records
+        catno: SP-3259
+        entity_type: "1"
+        entity_type_name: Label
+        id: 904
+        resource_url: https://api.discogs.com/labels/904
+    artists:
+      - name: Procol Harum
+        anv: ""
+        join: ""
+        role: ""
+        tracks: ""
+        id: 254414
+        resource_url: https://api.discogs.com/artists/254414
+    genres:
+      - Rock
+    styles: []
+  - id: 3036891
+    master_id: 24047
+    master_url: https://api.discogs.com/masters/24047
+    resource_url: https://api.discogs.com/releases/3036891
+    thumb: >-
+      https://i.discogs.com/FaF4s-fa_TWaWaldWbx-VUdc5sju2XU-NBBVgfc2qsg/rs:fit/g:sm/q:40/h:150/w:150/czM6Ly9kaXNjb2dz/LWRhdGFiYXNlLWlt/YWdlcy9SLTMwMzY4/OTEtMTMxMjc3ODcz/Mi5qcGVn.jpeg
+    cover_image: >-
+      https://i.discogs.com/3ES45b8C7QNHx9Eg5P3aGthgz0P0YBlmpFXwuQvkiuw/rs:fit/g:sm/q:90/h:500/w:500/czM6Ly9kaXNjb2dz/LWRhdGFiYXNlLWlt/YWdlcy9SLTMwMzY4/OTEtMTMxMjc3ODcz/Mi5qcGVn.jpeg
+    title: Abbey Road
+    year: 1971
+    formats:
+      - name: Vinyl
+        qty: "1"
+        text: Winchester Pressing
+        descriptions:
+          - LP
+          - Album
+          - Reissue
+          - Stereo
+    labels:
+      - name: Apple Records
+        catno: SO-383
+        entity_type: "1"
+        entity_type_name: Label
+        id: 25693
+        resource_url: https://api.discogs.com/labels/25693
+    artists:
+      - name: The Beatles
+        anv: ""
+        join: ""
+        role: ""
+        tracks: ""
+        id: 82730
+        resource_url: https://api.discogs.com/artists/82730
+    genres:
+      - Rock
+    styles:
+      - Pop Rock
+  - id: 1485752
+    master_id: 56036
+    master_url: https://api.discogs.com/masters/56036
+    resource_url: https://api.discogs.com/releases/1485752
+    thumb: >-
+      https://i.discogs.com/l35SMx1IwmvVzGn2_xXSXxTxAgL8T-Dvmpchxh-K0YQ/rs:fit/g:sm/q:40/h:150/w:150/czM6Ly9kaXNjb2dz/LWRhdGFiYXNlLWlt/YWdlcy9SLTE0ODU3/NTItMTU5MDM2NDk4/OS04NDEyLmpwZWc.jpeg
+    cover_image: >-
+      https://i.discogs.com/C1kPzw91t--voE29LbYSgDzMd5QaT-f_qnPAtRCpG9I/rs:fit/g:sm/q:90/h:600/w:598/czM6Ly9kaXNjb2dz/LWRhdGFiYXNlLWlt/YWdlcy9SLTE0ODU3/NTItMTU5MDM2NDk4/OS04NDEyLmpwZWc.jpeg
+    title: All Things Must Pass
+    year: 1970
+    formats:
+      - name: Vinyl
+        qty: "3"
+        text: "Winchester Pressing "
+        descriptions:
+          - LP
+          - Album
+          - Stereo
+      - name: Box Set
+        qty: "1"
+        descriptions: []
+    labels:
+      - name: Apple Records
+        catno: STCH 639
+        entity_type: "1"
+        entity_type_name: Label
+        id: 25693
+        resource_url: https://api.discogs.com/labels/25693
+    artists:
+      - name: George Harrison
+        anv: ""
+        join: ""
+        role: ""
+        tracks: ""
+        id: 243955
+        resource_url: https://api.discogs.com/artists/243955
+    genres:
+      - Rock
+    styles:
+      - Pop Rock
+  - id: 12775821
+    master_id: 46402
+    master_url: https://api.discogs.com/masters/46402
+    resource_url: https://api.discogs.com/releases/12775821
+    thumb: >-
+      https://i.discogs.com/84NuSy4HCVkrkqj83kot90h48K2ZUrbey0Q34tYADN0/rs:fit/g:sm/q:40/h:150/w:150/czM6Ly9kaXNjb2dz/LWRhdGFiYXNlLWlt/YWdlcy9SLTEyNzc1/ODIxLTE1NDIxODIw/MTQtMTg0Ni5qcGVn.jpeg
+    cover_image: >-
+      https://i.discogs.com/8FDLemdNLoUnj8jBGiEZGYaG0kVB1LUBGPZZcbxOLHI/rs:fit/g:sm/q:90/h:600/w:600/czM6Ly9kaXNjb2dz/LWRhdGFiYXNlLWlt/YWdlcy9SLTEyNzc1/ODIxLTE1NDIxODIw/MTQtMTg0Ni5qcGVn.jpeg
+    title: The Beatles And Esher Demos
+    year: 2018
+    formats:
+      - name: Vinyl
+        qty: "2"
+        text: 180g
+        descriptions:
+          - LP
+          - Album
+          - Reissue
+          - Remastered
+          - Stereo
+      - name: Vinyl
+        qty: "2"
+        text: 180g
+        descriptions:
+          - LP
+          - Stereo
+      - name: Box Set
+        qty: "1"
+        descriptions:
+          - Compilation
+    labels:
+      - name: Apple Records
+        catno: "0602567572015"
+        entity_type: "1"
+        entity_type_name: Label
+        id: 25693
+        resource_url: https://api.discogs.com/labels/25693
+      - name: Universal Music Group International
+        catno: "0602567572015"
+        entity_type: "1"
+        entity_type_name: Label
+        id: 138199
+        resource_url: https://api.discogs.com/labels/138199
+    artists:
+      - name: The Beatles
+        anv: ""
+        join: ""
+        role: ""
+        tracks: ""
+        id: 82730
+        resource_url: https://api.discogs.com/artists/82730
+    genres:
+      - Rock
+      - Pop
+    styles:
+      - Rock & Roll
+      - Pop Rock
+      - Soft Rock
+      - Psychedelic Rock
+      - Experimental
+      - Country Rock
+      - Blues Rock
+      - Avantgarde
+```
 
 ### Download Wantlist Action - discogs_sync.download_wantlist
 
@@ -90,6 +272,90 @@ Parameters:
 
 Returns:
 - Your complete wantlist data
+
+Example response:
+```
+wantlist:
+  - id: 31381
+    master_id: 19493
+    master_url: https://api.discogs.com/masters/19493
+    resource_url: https://api.discogs.com/releases/31381
+    title: Head Hunters
+    year: 1973
+    formats:
+      - name: Vinyl
+        qty: "1"
+        descriptions:
+          - LP
+          - Album
+        text: Pitman Pressing
+    artists:
+      - name: Herbie Hancock
+        anv: ""
+        join: ""
+        role: ""
+        tracks: ""
+        id: 3865
+        resource_url: https://api.discogs.com/artists/3865
+    labels:
+      - name: Columbia
+        catno: KC 32731
+        entity_type: "1"
+        entity_type_name: Label
+        id: 1866
+        resource_url: https://api.discogs.com/labels/1866
+    thumb: >-
+      https://i.discogs.com/hNhSZVdUZjUKO3ST78dt9TQ-muc62zOH9CWVk7z4WYk/rs:fit/g:sm/q:40/h:150/w:150/czM6Ly9kaXNjb2dz/LWRhdGFiYXNlLWlt/YWdlcy9SLTMxMzgx/LTE0MzMyNTkxNDMt/ODUyMi5qcGVn.jpeg
+    cover_image: >-
+      https://i.discogs.com/PzhEnDeEy-u3foEvF-q1mPZDeTGt__d6k4j9XUZ7q_c/rs:fit/g:sm/q:90/h:600/w:600/czM6Ly9kaXNjb2dz/LWRhdGFiYXNlLWlt/YWdlcy9SLTMxMzgx/LTE0MzMyNTkxNDMt/ODUyMi5qcGVn.jpeg
+    genres:
+      - Jazz
+    styles:
+      - Jazz-Funk
+  - id: 677581
+    master_id: 72232
+    master_url: https://api.discogs.com/masters/72232
+    resource_url: https://api.discogs.com/releases/677581
+    title: Janis Joplin's Greatest Hits
+    year: 1973
+    formats:
+      - name: Vinyl
+        qty: "1"
+        descriptions:
+          - LP
+          - Compilation
+          - Stereo
+        text: Pitman
+    artists:
+      - name: Janis Joplin
+        anv: ""
+        join: ""
+        role: ""
+        tracks: ""
+        id: 120232
+        resource_url: https://api.discogs.com/artists/120232
+    labels:
+      - name: Columbia
+        catno: KC 32168
+        entity_type: "1"
+        entity_type_name: Label
+        id: 1866
+        resource_url: https://api.discogs.com/labels/1866
+      - name: Columbia
+        catno: KC 32168
+        entity_type: "1"
+        entity_type_name: Label
+        id: 1866
+        resource_url: https://api.discogs.com/labels/1866
+    thumb: >-
+      https://i.discogs.com/wBbFpOx96fY-M3ujFqje3-viUujsDAbdSre6Uutcwwg/rs:fit/g:sm/q:40/h:150/w:150/czM6Ly9kaXNjb2dz/LWRhdGFiYXNlLWlt/YWdlcy9SLTY3NzU4/MS0xMjc5MzA0Njk5/LmpwZWc.jpeg
+    cover_image: >-
+      https://i.discogs.com/daRnbdjOFbSZjkuYZRD-W3FSoeakrgbr_KCK4rFkz0Q/rs:fit/g:sm/q:90/h:600/w:600/czM6Ly9kaXNjb2dz/LWRhdGFiYXNlLWlt/YWdlcy9SLTY3NzU4/MS0xMjc5MzA0Njk5/LmpwZWc.jpeg
+    genres:
+      - Rock
+    styles:
+      - Blues Rock
+```
 
 ## Using with flex-table-card
 
@@ -180,6 +446,34 @@ columns:
 
 
 Sometimes data from Discogs is incomplete or null, which causes flex-table-card to display `undefinedundefinedundefined` in the cell. You can mitigate this by using `modify: if(x.length == 0){""}else{x}` in columns.
+
+
+<img width="841" height="626" alt="image" src="https://github.com/user-attachments/assets/76821464-c85d-4bd4-b3f6-f1c52627717b" />
+
+
+### Markdown Card
+Using a markdown card, you can create a nice looking display for the random record.
+
+```
+type: markdown
+content: |-
+  # **Random Play**
+  ## {{ states('sensor.discogs_sync_random_record') }}
+  {% set f = state_attr('sensor.discogs_sync_random_record','format') %}
+  {% if 'Vinyl' in f %}
+  ### Vinyl
+  {% elif 'Cassette' in f %}
+  ### Cassette
+  {% elif 'CD' in f %}
+  ### CD
+  {% else %}
+  ### Other
+  {% endif %}
+  ![image]({{ state_attr('sensor.discogs_sync_random_record','cover_image') }})
+text_only: true
+```
+
+<img width="418" height="528" alt="image" src="https://github.com/user-attachments/assets/deb56a23-87f1-42fb-8547-f484953c50bb" />
 
 
 ## Notes
