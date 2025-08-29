@@ -72,7 +72,8 @@ class DiscogsCoordinator(DataUpdateCoordinator):
         self._rate_limit_data = {
             "limit": 60,
             "remaining": 60,
-            "exceeded": False
+            "exceeded": False,
+            "last_updated": None
         }
         
         # For scheduled updates
@@ -83,15 +84,34 @@ class DiscogsCoordinator(DataUpdateCoordinator):
         self.store = Store(hass, 1, f"{DOMAIN}_{entry.entry_id}_state")
         self._stored_data = None
         
+        # Use the shortest interval for the coordinator's update interval
+        # This ensures we check for needed updates regularly
+        min_interval = min(self._update_intervals.values()) // 60
+        # But don't let it be less than 1 minute to avoid hammering HA
+        min_interval = max(min_interval, 1)
+        
+        update_interval = timedelta(minutes=min_interval)
+        _LOGGER.debug(f"Setting coordinator update_interval to {min_interval} minutes")
+        
         # Initialize with standard update interval but we'll handle individual endpoint updates
-        update_interval = timedelta(minutes=self.global_update_interval)
         super().__init__(
             hass,
             _LOGGER,
             name=DOMAIN,
             update_interval=update_interval,
         )
+        
+        # Store the next update time for each endpoint
+        self._next_update_time = {}
+        # Initialize next update times - first update should happen immediately
+        for endpoint in self._update_intervals:
+            self._next_update_time[endpoint] = 0
 
+    @property
+    def name(self):
+        """Return coordinator name."""
+        return self._name
+        
     async def async_config_entry_first_refresh(self):
         """First refresh with state restoration."""
         # Try to load saved data first
@@ -102,6 +122,20 @@ class DiscogsCoordinator(DataUpdateCoordinator):
             _LOGGER.debug("Restoring saved state data: %s", self._stored_data)
             self._data = self._stored_data
             self.data = self._stored_data
+            
+            # Also restore last updated times if available
+            if "_last_updated" in self._stored_data:
+                for endpoint, last_updated in self._stored_data["_last_updated"].items():
+                    if last_updated is not None:
+                        # Calculate the next update time based on the last update and the interval
+                        interval = self._update_intervals.get(endpoint, 3600)  # Default 1 hour
+                        self._next_update_time[endpoint] = last_updated + interval
+                        _LOGGER.debug(
+                            "Restored last update time for %s: %s, next update at %s", 
+                            endpoint, 
+                            time.ctime(last_updated),
+                            time.ctime(self._next_update_time[endpoint])
+                        )
         else:
             _LOGGER.debug("No saved state data found, starting fresh")
             
@@ -112,33 +146,51 @@ class DiscogsCoordinator(DataUpdateCoordinator):
         """Fetch data from Discogs but only update endpoints as needed."""
         if not self.enable_scheduled_updates:
             # If scheduled updates are disabled, just return the current data
+            _LOGGER.debug("Automatic updates are disabled")
             return self._data
             
         try:
             current_time = time.time()
+            update_performed = False
             
             # Check each endpoint to see if it needs updating
             for endpoint in ["collection", "wantlist", "collection_value", "random_record"]:
-                last_updated = self._data.get("_last_updated", {}).get(endpoint)
-                interval = self._update_intervals.get(endpoint)
+                # Calculate if it's time for an update
+                next_update = self._next_update_time.get(endpoint, 0)
+                time_until_update = next_update - current_time
                 
-                # Update if never updated or if enough time has passed
-                if last_updated is None or (current_time - last_updated) >= interval:
-                    _LOGGER.debug(f"Updating {endpoint} endpoint - due for update")
+                if time_until_update <= 0:
+                    _LOGGER.debug(
+                        f"Updating {endpoint} endpoint - update is due (next: {time.ctime(next_update)})"
+                    )
                     
                     if endpoint == "collection":
-                        await self.async_update_collection()
+                        success = await self.async_update_collection()
                     elif endpoint == "wantlist":
-                        await self.async_update_wantlist()
+                        success = await self.async_update_wantlist()
                     elif endpoint == "collection_value":
-                        await self.async_update_collection_value()
+                        success = await self.async_update_collection_value()
                     elif endpoint == "random_record":
-                        await self.async_update_random_record()
+                        success = await self.async_update_random_record()
+                    else:
+                        success = False
+                    
+                    if success:
+                        # Calculate next update time based on interval
+                        interval = self._update_intervals.get(endpoint, 3600)  # Default 1 hour
+                        self._next_update_time[endpoint] = current_time + interval
+                        _LOGGER.debug(
+                            f"Next update for {endpoint} scheduled at {time.ctime(self._next_update_time[endpoint])}"
+                        )
+                        update_performed = True
                 else:
-                    _LOGGER.debug(f"Skipping {endpoint} update - not due yet")
+                    _LOGGER.debug(
+                        f"Skipping {endpoint} update - next update in {int(time_until_update)} seconds"
+                    )
             
             # Reset rate limit exceeded flag if we successfully reached this point
-            self._rate_limit_data["exceeded"] = False
+            if update_performed:
+                self._rate_limit_data["exceeded"] = False
             
         except Exception as err:
             _LOGGER.exception("Error updating Discogs data: %s", err)
@@ -170,34 +222,54 @@ class DiscogsCoordinator(DataUpdateCoordinator):
         if enable_scheduled_updates is not None:
             self.enable_scheduled_updates = enable_scheduled_updates
             _LOGGER.debug("Set enable_scheduled_updates to %s", enable_scheduled_updates)
+        
+        config_updated = False
             
         if global_update_interval is not None:
             self.global_update_interval = global_update_interval
-            # Update the coordinator's general update interval
-            self.update_interval = timedelta(minutes=global_update_interval)
+            config_updated = True
             _LOGGER.debug("Set global_update_interval to %s minutes", global_update_interval)
         
         # Update individual intervals if provided (and enable_scheduled_updates is True)
         if enable_scheduled_updates is not False:
             if collection_interval is not None:
                 self._update_intervals["collection"] = collection_interval * 60
+                config_updated = True
                 _LOGGER.debug("Set collection update interval to %s minutes (%s seconds)", 
                             collection_interval, collection_interval * 60)
             
             if wantlist_interval is not None:
                 self._update_intervals["wantlist"] = wantlist_interval * 60
+                config_updated = True
                 _LOGGER.debug("Set wantlist update interval to %s minutes (%s seconds)", 
                             wantlist_interval, wantlist_interval * 60)
             
             if collection_value_interval is not None:
                 self._update_intervals["collection_value"] = collection_value_interval * 60
+                config_updated = True
                 _LOGGER.debug("Set collection value update interval to %s minutes (%s seconds)", 
                             collection_value_interval, collection_value_interval * 60)
             
             if random_record_interval is not None:
                 self._update_intervals["random_record"] = random_record_interval * 60
+                config_updated = True
                 _LOGGER.debug("Set random record update interval to %s minutes (%s seconds)", 
                             random_record_interval, random_record_interval * 60)
+                
+            # If any intervals were updated, update the update_interval for the coordinator
+            if config_updated:
+                # Use the shortest interval for the coordinator's update interval
+                min_interval = min(self._update_intervals.values()) // 60
+                # But don't let it be less than 1 minute to avoid hammering HA
+                min_interval = max(min_interval, 1)
+                self.update_interval = timedelta(minutes=min_interval)
+                _LOGGER.debug(f"Updated coordinator update_interval to {min_interval} minutes")
+                
+            # Reset next update times so they'll be checked on the next coordinator update
+            current_time = time.time()
+            for endpoint in self._update_intervals:
+                self._next_update_time[endpoint] = current_time
+                _LOGGER.debug(f"Reset next update time for {endpoint} to now")
 
     async def async_update_collection(self):
         """Update collection data."""
