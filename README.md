@@ -7,7 +7,7 @@
 [![hacs_badge](https://img.shields.io/badge/HACS-Custom-orange.svg)](https://github.com/custom-components/hacs)
 [![GitHub release (latest by date)](https://img.shields.io/github/v/release/iamjoshk/discogs_sync)](https://github.com/iamjoshk/discogs_sync/releases)
 
-This integration brings your full Discogs collection into Home Assistant, expanding on the legacy core Discogs integration. It provides sensors for collection size, wantlist size, collection value, and a random record feature. It also includes an action that can fetch your entire collection and make it available for display using cards like flex-table-card or downloaded as a JSON file.
+This integration brings your full [Discogs](https://www.discogs.com) collection into Home Assistant, expanding on the legacy core Discogs integration. It provides sensors for collection size, wantlist size, collection value, and a random record feature. It also includes an action that can fetch your entire collection and make it available for display using cards like flex-table-card or downloaded as a JSON file.
 
 ## Features
 
@@ -15,9 +15,9 @@ This integration brings your full Discogs collection into Home Assistant, expand
 - Wantlist count sensor
 - Collection value sensors (minimum, median, maximum)
 - Random record sensor with details and artwork
-- Buttons to refresh each data for each API endpoint.
-- Rate limit monitor
+- Buttons to refresh each data for each API endpoint
 - Actions that return collection and wantlist data for use in dashboards
+- Rate limit monitor
 - Support for flex-table-card integration
 
 ## Installation
