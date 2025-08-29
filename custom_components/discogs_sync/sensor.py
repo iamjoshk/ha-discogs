@@ -6,6 +6,7 @@ from homeassistant.helpers.update_coordinator import CoordinatorEntity
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.config_entries import ConfigEntry
+import datetime
 import logging
 
 from .const import (
@@ -115,17 +116,23 @@ class DiscogsSensor(CoordinatorEntity, SensorEntity):
         if self.entity_description.key == SENSOR_COLLECTION_TYPE:
             last_updated = self.coordinator.data.get("_last_updated", {}).get("collection")
             if last_updated:
-                attrs["last_updated"] = last_updated
+                # Convert timestamp to readable format
+                last_updated_str = datetime.datetime.fromtimestamp(last_updated).strftime('%Y-%m-%d %H:%M:%S')
+                attrs["last_updated"] = last_updated_str
                 
         elif self.entity_description.key == SENSOR_WANTLIST_TYPE:
             last_updated = self.coordinator.data.get("_last_updated", {}).get("wantlist")
             if last_updated:
-                attrs["last_updated"] = last_updated
+                # Convert timestamp to readable format
+                last_updated_str = datetime.datetime.fromtimestamp(last_updated).strftime('%Y-%m-%d %H:%M:%S')
+                attrs["last_updated"] = last_updated_str
                 
         elif self.entity_description.key == SENSOR_RANDOM_RECORD_TYPE:
             last_updated = self.coordinator.data.get("_last_updated", {}).get("random_record")
             if last_updated:
-                attrs["last_updated"] = last_updated
+                # Convert timestamp to readable format
+                last_updated_str = datetime.datetime.fromtimestamp(last_updated).strftime('%Y-%m-%d %H:%M:%S')
+                attrs["last_updated"] = last_updated_str
                 
         elif self.entity_description.key in [
             SENSOR_COLLECTION_VALUE_MIN_TYPE,
@@ -134,7 +141,9 @@ class DiscogsSensor(CoordinatorEntity, SensorEntity):
         ]:
             last_updated = self.coordinator.data.get("_last_updated", {}).get("collection_value")
             if last_updated:
-                attrs["last_updated"] = last_updated
+                # Convert timestamp to readable format
+                last_updated_str = datetime.datetime.fromtimestamp(last_updated).strftime('%Y-%m-%d %H:%M:%S')
+                attrs["last_updated"] = last_updated_str
                 
         return attrs
     
