@@ -82,9 +82,9 @@ class DiscogsCoordinator(DataUpdateCoordinator):
         
         _LOGGER.debug("Updated endpoint intervals: %s", self._endpoint_intervals)
     
-    @property
-    def name(self) -> str:
-        """Return coordinator name."""
+    @property  
+    def display_name_property(self) -> str:
+        """Return coordinator display name."""
         return self.display_name
     
     async def _async_update_data(self) -> Dict[str, Any]:

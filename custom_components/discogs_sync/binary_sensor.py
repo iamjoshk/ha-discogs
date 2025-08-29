@@ -38,7 +38,7 @@ class DiscogsRateLimitSensor(CoordinatorEntity, BinarySensorEntity):
         self._attr_unique_id = f"{coordinator.config_entry.entry_id}_rate_limit"
         self._attr_device_info = {
             "identifiers": {(DOMAIN, coordinator.config_entry.entry_id)},
-            "name": coordinator.name
+            "name": coordinator.display_name
         }
 
     @property

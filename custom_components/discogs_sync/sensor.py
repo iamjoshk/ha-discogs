@@ -53,7 +53,7 @@ class DiscogsSensor(CoordinatorEntity, SensorEntity):
         self._attr_unique_id = f"{coordinator.config_entry.entry_id}_{sensor_key}"
         self._attr_device_info = {
             "identifiers": {(DOMAIN, coordinator.config_entry.entry_id)},
-            "name": coordinator.name,
+            "name": coordinator.display_name,
         }
 
     @property
