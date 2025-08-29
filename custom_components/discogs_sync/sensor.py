@@ -1,19 +1,16 @@
 """Simplified sensor platform for Discogs Sync."""
 from __future__ import annotations
 
-import logging
 import datetime
 from typing import Any, Dict, Optional
 
-from homeassistant.components.sensor import SensorEntity, SensorEntityDescription
+from homeassistant.components.sensor import SensorEntity
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.config_entries import ConfigEntry
 
 from .const import DOMAIN, UNIT_RECORDS, ICON_RECORD, ICON_PLAYER, ICON_CASH
-
-_LOGGER = logging.getLogger(__name__)
 
 # Simplified sensor definitions
 SENSORS = [
