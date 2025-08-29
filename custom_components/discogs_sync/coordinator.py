@@ -9,7 +9,13 @@ from homeassistant.helpers.update_coordinator import DataUpdateCoordinator
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import CONF_TOKEN, CONF_NAME
 
-from .const import DOMAIN, DEFAULT_NAME
+from .const import (
+    DOMAIN, DEFAULT_NAME,
+    CONF_COLLECTION_UPDATE_INTERVAL, DEFAULT_COLLECTION_UPDATE_INTERVAL,
+    CONF_WANTLIST_UPDATE_INTERVAL, DEFAULT_WANTLIST_UPDATE_INTERVAL,
+    CONF_COLLECTION_VALUE_UPDATE_INTERVAL, DEFAULT_COLLECTION_VALUE_UPDATE_INTERVAL,
+    CONF_RANDOM_RECORD_UPDATE_INTERVAL, DEFAULT_RANDOM_RECORD_UPDATE_INTERVAL
+)
 from .api_client import DiscogsAPIClient
 
 _LOGGER = logging.getLogger(__name__)
@@ -34,13 +40,15 @@ class DiscogsCoordinator(DataUpdateCoordinator):
             "last_updated": {}
         }
         
-        # Set up endpoint intervals (in minutes)
+        # Set up endpoint intervals (in minutes) using proper defaults
         self._endpoint_intervals = {
-            "collection": entry.options.get("collection_update_interval", 10),
-            "wantlist": entry.options.get("wantlist_update_interval", 10),
-            "collection_value": entry.options.get("collection_value_update_interval", 30),
-            "random_record": entry.options.get("random_record_update_interval", 240)
+            "collection": entry.options.get(CONF_COLLECTION_UPDATE_INTERVAL, DEFAULT_COLLECTION_UPDATE_INTERVAL),
+            "wantlist": entry.options.get(CONF_WANTLIST_UPDATE_INTERVAL, DEFAULT_WANTLIST_UPDATE_INTERVAL),
+            "collection_value": entry.options.get(CONF_COLLECTION_VALUE_UPDATE_INTERVAL, DEFAULT_COLLECTION_VALUE_UPDATE_INTERVAL),
+            "random_record": entry.options.get(CONF_RANDOM_RECORD_UPDATE_INTERVAL, DEFAULT_RANDOM_RECORD_UPDATE_INTERVAL)
         }
+        
+        _LOGGER.debug("Initialized coordinator with intervals: %s", self._endpoint_intervals)
         
         # Set update interval based on configuration
         update_interval = self._get_update_interval(entry)
@@ -57,10 +65,14 @@ class DiscogsCoordinator(DataUpdateCoordinator):
         # Use shortest configured interval (excluding disabled ones) or default to 10 minutes
         intervals = []
         
-        for option_key in ["collection_update_interval", "wantlist_update_interval", 
-                          "collection_value_update_interval", "random_record_update_interval"]:
-            interval = entry.options.get(option_key)
-            if interval and interval > 0:  # Only include enabled endpoints
+        for option_key, default in [
+            (CONF_COLLECTION_UPDATE_INTERVAL, DEFAULT_COLLECTION_UPDATE_INTERVAL),
+            (CONF_WANTLIST_UPDATE_INTERVAL, DEFAULT_WANTLIST_UPDATE_INTERVAL),
+            (CONF_COLLECTION_VALUE_UPDATE_INTERVAL, DEFAULT_COLLECTION_VALUE_UPDATE_INTERVAL),
+            (CONF_RANDOM_RECORD_UPDATE_INTERVAL, DEFAULT_RANDOM_RECORD_UPDATE_INTERVAL)
+        ]:
+            interval = entry.options.get(option_key, default)
+            if interval > 0:  # Only include enabled endpoints
                 intervals.append(interval)
         
         min_interval = min(intervals) if intervals else 10
@@ -71,10 +83,10 @@ class DiscogsCoordinator(DataUpdateCoordinator):
         """Update the individual endpoint intervals."""
         # Store intervals, allowing 0 to disable endpoints
         self._endpoint_intervals = {
-            "collection": collection_interval if collection_interval is not None else 10,
-            "wantlist": wantlist_interval if wantlist_interval is not None else 10,
-            "collection_value": collection_value_interval if collection_value_interval is not None else 30,
-            "random_record": random_record_interval if random_record_interval is not None else 240
+            "collection": collection_interval if collection_interval is not None else DEFAULT_COLLECTION_UPDATE_INTERVAL,
+            "wantlist": wantlist_interval if wantlist_interval is not None else DEFAULT_WANTLIST_UPDATE_INTERVAL,
+            "collection_value": collection_value_interval if collection_value_interval is not None else DEFAULT_COLLECTION_VALUE_UPDATE_INTERVAL,
+            "random_record": random_record_interval if random_record_interval is not None else DEFAULT_RANDOM_RECORD_UPDATE_INTERVAL
         }
         
         _LOGGER.debug("Updated endpoint intervals: %s", self._endpoint_intervals)
@@ -90,6 +102,8 @@ class DiscogsCoordinator(DataUpdateCoordinator):
             _LOGGER.debug("Automatic updates disabled")
             return self._data
         
+        _LOGGER.debug("Starting data update. Current intervals: %s", self._endpoint_intervals)
+        
         try:
             # Get user identity first (includes basic collection/wantlist counts)
             # Only update if collection or wantlist intervals are enabled
@@ -99,17 +113,30 @@ class DiscogsCoordinator(DataUpdateCoordinator):
             if collection_enabled or wantlist_enabled:
                 identity = await self.hass.async_add_executor_job(self.api_client.get_user_identity)
                 if identity:
+                    # Always update username and currency
                     self._data["user"] = identity["username"]
+                    self._data["collection_value"]["currency"] = identity["currency"]
                     
                     # Only update specific counts if their intervals are enabled
                     if collection_enabled:
                         self._data["collection_count"] = identity["collection_count"]
+                        self._data["last_updated"]["collection"] = time.time()
+                        _LOGGER.debug("Updated collection count: %s", identity["collection_count"])
                     if wantlist_enabled:
                         self._data["wantlist_count"] = identity["wantlist_count"]
-                        
-                    self._data["collection_value"]["currency"] = identity["currency"]
+                        self._data["last_updated"]["wantlist"] = time.time()
+                        _LOGGER.debug("Updated wantlist count: %s", identity["wantlist_count"])
             else:
                 _LOGGER.debug("Collection and wantlist updates disabled (intervals = 0)")
+                # Still try to get user identity for username if we don't have it
+                if not self._data.get("user"):
+                    try:
+                        identity = await self.hass.async_add_executor_job(self.api_client.get_user_identity)
+                        if identity:
+                            self._data["user"] = identity["username"]
+                            self._data["collection_value"]["currency"] = identity["currency"]
+                    except Exception as err:
+                        _LOGGER.debug("Failed to get user identity: %s", err)
             
             # Update other endpoints if needed
             username = self._data.get("user")
