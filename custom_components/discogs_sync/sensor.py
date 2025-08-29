@@ -62,9 +62,11 @@ class DiscogsSensor(CoordinatorEntity, SensorEntity):
         data = self.coordinator.data
         
         if self._sensor_key == "collection":
-            return data.get("collection_count")
+            value = data.get("collection_count")
+            return value if value is not None else 0
         elif self._sensor_key == "wantlist":
-            return data.get("wantlist_count")
+            value = data.get("wantlist_count") 
+            return value if value is not None else 0
         elif self._sensor_key == "random_record":
             return data.get("random_record", {}).get("title")
         elif self._sensor_key == "value_min":
@@ -75,6 +77,12 @@ class DiscogsSensor(CoordinatorEntity, SensorEntity):
             return data.get("collection_value", {}).get("max")
         
         return None
+
+    @property
+    def available(self) -> bool:
+        """Return if entity is available."""
+        # Check if we have a username (indicates we've fetched data at least once)
+        return self.coordinator.data.get("user") is not None
 
     @property
     def native_unit_of_measurement(self) -> Optional[str]:
