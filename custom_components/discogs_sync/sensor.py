@@ -1,13 +1,14 @@
 """Sensor platform for Discogs Sync."""
 from __future__ import annotations
 
+import logging
+import datetime
+
 from homeassistant.components.sensor import SensorEntity, SensorEntityDescription
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.config_entries import ConfigEntry
-import datetime
-import logging
 
 from .const import (
     DOMAIN, SENSOR_COLLECTION_TYPE, SENSOR_WANTLIST_TYPE, SENSOR_RANDOM_RECORD_TYPE,
@@ -17,18 +18,18 @@ from .const import (
 
 _LOGGER = logging.getLogger(__name__)
 
-SENSOR_TYPES: tuple[SensorEntityDescription, ...] = (
+SENSOR_DESCRIPTIONS = [
     SensorEntityDescription(
         key=SENSOR_COLLECTION_TYPE,
         name="Collection",
+        native_unit_of_measurement=UNIT_RECORDS,
         icon=ICON_RECORD,
-        native_unit_of_measurement=UNIT_RECORDS
     ),
     SensorEntityDescription(
         key=SENSOR_WANTLIST_TYPE,
         name="Wantlist",
+        native_unit_of_measurement=UNIT_RECORDS,
         icon=ICON_RECORD,
-        native_unit_of_measurement=UNIT_RECORDS
     ),
     SensorEntityDescription(
         key=SENSOR_RANDOM_RECORD_TYPE,
@@ -50,58 +51,59 @@ SENSOR_TYPES: tuple[SensorEntityDescription, ...] = (
         name="Collection Value (Max)",
         icon=ICON_CASH,
     ),
-)
+]
 
 async def async_setup_entry(
     hass: HomeAssistant, entry: ConfigEntry, async_add_entities: AddEntitiesCallback
 ) -> None:
     """Set up the sensor platform."""
     coordinator = hass.data[DOMAIN][entry.entry_id]
-    entities = [DiscogsSensor(coordinator, description) for description in SENSOR_TYPES]
-    async_add_entities(entities)
+    async_add_entities(
+        DiscogsSensor(coordinator, description) for description in SENSOR_DESCRIPTIONS
+    )
 
 class DiscogsSensor(CoordinatorEntity, SensorEntity):
-    """A sensor implementation for the Discogs integration."""
+    """Discogs sensor."""
+
     _attr_has_entity_name = True
 
-    def __init__(self, coordinator, description: SensorEntityDescription):
+    def __init__(self, coordinator, description):
         """Initialize the sensor."""
         super().__init__(coordinator)
         self.entity_description = description
         self._attr_unique_id = f"{coordinator.config_entry.entry_id}_{description.key}"
         self._attr_device_info = {
             "identifiers": {(DOMAIN, coordinator.config_entry.entry_id)},
-            "name": coordinator.name
+            "name": coordinator.name,
         }
-        
-        # Set currency symbol for collection value sensors
-        if description.key in [
-            SENSOR_COLLECTION_VALUE_MIN_TYPE, 
-            SENSOR_COLLECTION_VALUE_MEDIAN_TYPE, 
-            SENSOR_COLLECTION_VALUE_MAX_TYPE
-        ]:
-            self._attr_native_unit_of_measurement = coordinator.data.get("currency_symbol")
 
     @property
     def native_value(self):
         """Return the state of the sensor."""
         if self.entity_description.key == SENSOR_COLLECTION_TYPE:
             return self.coordinator.data.get("collection_count")
-            
         elif self.entity_description.key == SENSOR_WANTLIST_TYPE:
             return self.coordinator.data.get("wantlist_count")
-            
         elif self.entity_description.key == SENSOR_RANDOM_RECORD_TYPE:
             return self.coordinator.data.get("random_record", {}).get("title")
-            
         elif self.entity_description.key == SENSOR_COLLECTION_VALUE_MIN_TYPE:
             return self.coordinator.data.get("collection_value", {}).get("min")
-            
         elif self.entity_description.key == SENSOR_COLLECTION_VALUE_MEDIAN_TYPE:
             return self.coordinator.data.get("collection_value", {}).get("median")
-            
         elif self.entity_description.key == SENSOR_COLLECTION_VALUE_MAX_TYPE:
             return self.coordinator.data.get("collection_value", {}).get("max")
+        return None
+
+    @property
+    def native_unit_of_measurement(self):
+        """Return the unit of measurement for the sensor."""
+        if self.entity_description.key in [
+            SENSOR_COLLECTION_VALUE_MIN_TYPE,
+            SENSOR_COLLECTION_VALUE_MEDIAN_TYPE,
+            SENSOR_COLLECTION_VALUE_MAX_TYPE,
+        ]:
+            return self.coordinator.data.get("currency_symbol")
+        return self.entity_description.native_unit_of_measurement
 
     @property
     def extra_state_attributes(self):
@@ -146,36 +148,3 @@ class DiscogsSensor(CoordinatorEntity, SensorEntity):
                 attrs["last_updated"] = last_updated_str
                 
         return attrs
-    
-    async def async_added_to_hass(self):
-        """When entity is added to hass."""
-        await super().async_added_to_hass()
-        
-        # Get initial value from coordinator data based on sensor type
-        if self.coordinator.data:
-            _LOGGER.debug("Initializing %s sensor from stored data", self.entity_description.key)
-            
-            # Set value based on sensor type
-            if self.entity_description.key == SENSOR_COLLECTION_TYPE:
-                self._attr_native_value = self.coordinator.data.get("collection_count")
-                _LOGGER.debug("Restored collection count: %s", self._attr_native_value)
-                
-            elif self.entity_description.key == SENSOR_WANTLIST_TYPE:
-                self._attr_native_value = self.coordinator.data.get("wantlist_count")
-                _LOGGER.debug("Restored wantlist count: %s", self._attr_native_value)
-                
-            elif self.entity_description.key == SENSOR_RANDOM_RECORD_TYPE:
-                self._attr_native_value = self.coordinator.data.get("random_record", {}).get("title")
-                _LOGGER.debug("Restored random record: %s", self._attr_native_value)
-                
-            elif self.entity_description.key == SENSOR_COLLECTION_VALUE_MIN_TYPE:
-                self._attr_native_value = self.coordinator.data.get("collection_value", {}).get("min")
-                _LOGGER.debug("Restored collection value min: %s", self._attr_native_value)
-                
-            elif self.entity_description.key == SENSOR_COLLECTION_VALUE_MEDIAN_TYPE:
-                self._attr_native_value = self.coordinator.data.get("collection_value", {}).get("median")
-                _LOGGER.debug("Restored collection value median: %s", self._attr_native_value)
-                
-            elif self.entity_description.key == SENSOR_COLLECTION_VALUE_MAX_TYPE:
-                self._attr_native_value = self.coordinator.data.get("collection_value", {}).get("max")
-                _LOGGER.debug("Restored collection value max: %s", self._attr_native_value)

@@ -100,15 +100,16 @@ class DiscogsCoordinator(DataUpdateCoordinator):
             self._next_update_time[endpoint] = 0
             
         # Initialize with standard update interval but we'll handle individual endpoint updates
+        # IMPORTANT: We've removed the name property conflict by just using the name parameter
         super().__init__(
             hass,
             _LOGGER,
             name=DOMAIN,
             update_interval=update_interval,
         )
-
-    @property
-    def name(self):
+        
+    # Instead of the property that conflicts with parent class, provide a getter method
+    def get_display_name(self):
         """Return coordinator display name."""
         return self._display_name
         
