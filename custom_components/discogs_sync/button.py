@@ -50,7 +50,7 @@ class DiscogsRefreshButton(CoordinatorEntity, ButtonEntity):
         self._attr_unique_id = f"{coordinator.config_entry.entry_id}_{endpoint}_refresh"
         self._attr_device_info = {
             "identifiers": {(DOMAIN, coordinator.config_entry.entry_id)},
-            "name": coordinator.name
+            "name": coordinator.display_name
         }
         
     async def async_press(self):
