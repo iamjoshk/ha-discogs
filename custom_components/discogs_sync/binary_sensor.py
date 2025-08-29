@@ -1,8 +1,9 @@
-"""Binary sensor platform for Discogs Sync rate limit information."""
+"""Simplified binary sensor platform for Discogs Sync rate limit information."""
 from __future__ import annotations
 
 import datetime
-import logging
+from typing import Dict, Any
+
 from homeassistant.components.binary_sensor import (
     BinarySensorEntity,
     BinarySensorDeviceClass,
@@ -14,7 +15,6 @@ from homeassistant.config_entries import ConfigEntry
 
 from .const import DOMAIN
 
-_LOGGER = logging.getLogger(__name__)
 
 async def async_setup_entry(
     hass: HomeAssistant, entry: ConfigEntry, async_add_entities: AddEntitiesCallback
@@ -23,8 +23,10 @@ async def async_setup_entry(
     coordinator = hass.data[DOMAIN][entry.entry_id]
     async_add_entities([DiscogsRateLimitSensor(coordinator)])
 
+
 class DiscogsRateLimitSensor(CoordinatorEntity, BinarySensorEntity):
-    """Binary sensor for Discogs API rate limit status."""
+    """Simplified binary sensor for Discogs API rate limit status."""
+    
     _attr_has_entity_name = True
     _attr_device_class = BinarySensorDeviceClass.PROBLEM
     _attr_name = "Rate Limit"
@@ -38,48 +40,36 @@ class DiscogsRateLimitSensor(CoordinatorEntity, BinarySensorEntity):
             "identifiers": {(DOMAIN, coordinator.config_entry.entry_id)},
             "name": coordinator.name
         }
-        _LOGGER.debug("Initialized rate limit binary sensor")
 
     @property
-    def is_on(self):
+    def is_on(self) -> bool:
         """Return if rate limit is exceeded."""
-        # Rate limit is exceeded (problem) when the exceeded flag is True
-        # Access using the property method from coordinator
         return self.coordinator.get_rate_limit_data().get("exceeded", False)
 
     @property
-    def available(self):
+    def available(self) -> bool:
         """Return if entity is available."""
-        # Only available if we've received rate limit data
-        data = self.coordinator.get_rate_limit_data()
-        is_available = data.get("last_updated") is not None
-        _LOGGER.debug("Rate limit sensor available: %s", is_available)
-        return is_available
+        return self.coordinator.get_rate_limit_data().get("last_updated") is not None
 
     @property
-    def extra_state_attributes(self):
+    def extra_state_attributes(self) -> Dict[str, Any]:
         """Return rate limit attributes."""
         data = self.coordinator.get_rate_limit_data()
+        
         attributes = {
             "total_limit": data.get("total", 60),
             "used": data.get("used", 0),
-            "remaining": data.get("remaining", 0),
+            "remaining": data.get("remaining", 60),
         }
         
-        # Add last updated timestamp
-        if data.get("last_updated"):
-            last_updated = datetime.datetime.fromtimestamp(
-                data.get("last_updated")
-            ).strftime('%Y-%m-%d %H:%M:%S')
-            attributes["last_updated"] = last_updated
+        # Add timestamps and calculations
+        if last_updated := data.get("last_updated"):
+            attributes["last_updated"] = datetime.datetime.fromtimestamp(last_updated).strftime('%Y-%m-%d %H:%M:%S')
             
-        # Calculate reset time (60 seconds from when rate limit was first hit)
-        if data.get("exceeded") and data.get("last_updated"):
-            reset_time = datetime.datetime.fromtimestamp(
-                data.get("last_updated") + 60
-            ).strftime('%Y-%m-%d %H:%M:%S')
-            attributes["reset_time"] = reset_time
-            
+            if data.get("exceeded"):
+                reset_time = datetime.datetime.fromtimestamp(last_updated + 60)
+                attributes["reset_time"] = reset_time.strftime('%Y-%m-%d %H:%M:%S')
+        
         # Add percentage used
         if data.get("total", 0) > 0:
             percent_used = round((data.get("used", 0) / data.get("total", 60)) * 100, 1)

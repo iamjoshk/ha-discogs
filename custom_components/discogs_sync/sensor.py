@@ -1,8 +1,9 @@
-"""Sensor platform for Discogs Sync."""
+"""Simplified sensor platform for Discogs Sync."""
 from __future__ import annotations
 
 import logging
 import datetime
+from typing import Any, Dict, Optional
 
 from homeassistant.components.sensor import SensorEntity, SensorEntityDescription
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
@@ -10,141 +11,105 @@ from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.config_entries import ConfigEntry
 
-from .const import (
-    DOMAIN, SENSOR_COLLECTION_TYPE, SENSOR_WANTLIST_TYPE, SENSOR_RANDOM_RECORD_TYPE,
-    SENSOR_COLLECTION_VALUE_MIN_TYPE, SENSOR_COLLECTION_VALUE_MEDIAN_TYPE,
-    SENSOR_COLLECTION_VALUE_MAX_TYPE, UNIT_RECORDS, ICON_RECORD, ICON_PLAYER, ICON_CASH,
-)
+from .const import DOMAIN, UNIT_RECORDS, ICON_RECORD, ICON_PLAYER, ICON_CASH
 
 _LOGGER = logging.getLogger(__name__)
 
-SENSOR_DESCRIPTIONS = [
-    SensorEntityDescription(
-        key=SENSOR_COLLECTION_TYPE,
-        name="Collection",
-        native_unit_of_measurement=UNIT_RECORDS,
-        icon=ICON_RECORD,
-    ),
-    SensorEntityDescription(
-        key=SENSOR_WANTLIST_TYPE,
-        name="Wantlist",
-        native_unit_of_measurement=UNIT_RECORDS,
-        icon=ICON_RECORD,
-    ),
-    SensorEntityDescription(
-        key=SENSOR_RANDOM_RECORD_TYPE,
-        name="Random Record",
-        icon=ICON_PLAYER,
-    ),
-    SensorEntityDescription(
-        key=SENSOR_COLLECTION_VALUE_MIN_TYPE,
-        name="Collection Value (Min)",
-        icon=ICON_CASH,
-    ),
-    SensorEntityDescription(
-        key=SENSOR_COLLECTION_VALUE_MEDIAN_TYPE,
-        name="Collection Value (Median)",
-        icon=ICON_CASH,
-    ),
-    SensorEntityDescription(
-        key=SENSOR_COLLECTION_VALUE_MAX_TYPE,
-        name="Collection Value (Max)",
-        icon=ICON_CASH,
-    ),
+# Simplified sensor definitions
+SENSORS = [
+    ("collection", "Collection", UNIT_RECORDS, ICON_RECORD),
+    ("wantlist", "Wantlist", UNIT_RECORDS, ICON_RECORD), 
+    ("random_record", "Random Record", None, ICON_PLAYER),
+    ("value_min", "Collection Value (Min)", None, ICON_CASH),
+    ("value_median", "Collection Value (Median)", None, ICON_CASH),
+    ("value_max", "Collection Value (Max)", None, ICON_CASH),
 ]
+
 
 async def async_setup_entry(
     hass: HomeAssistant, entry: ConfigEntry, async_add_entities: AddEntitiesCallback
 ) -> None:
     """Set up the sensor platform."""
     coordinator = hass.data[DOMAIN][entry.entry_id]
-    async_add_entities(
-        DiscogsSensor(coordinator, description) for description in SENSOR_DESCRIPTIONS
-    )
+    entities = [
+        DiscogsSensor(coordinator, sensor_key, name, unit, icon) 
+        for sensor_key, name, unit, icon in SENSORS
+    ]
+    async_add_entities(entities)
+
 
 class DiscogsSensor(CoordinatorEntity, SensorEntity):
-    """Discogs sensor."""
+    """Simplified Discogs sensor."""
 
     _attr_has_entity_name = True
 
-    def __init__(self, coordinator, description):
+    def __init__(self, coordinator, sensor_key: str, name: str, unit: str, icon: str):
         """Initialize the sensor."""
         super().__init__(coordinator)
-        self.entity_description = description
-        self._attr_unique_id = f"{coordinator.config_entry.entry_id}_{description.key}"
+        self._sensor_key = sensor_key
+        self._attr_name = name
+        self._attr_icon = icon
+        self._attr_native_unit_of_measurement = unit
+        self._attr_unique_id = f"{coordinator.config_entry.entry_id}_{sensor_key}"
         self._attr_device_info = {
             "identifiers": {(DOMAIN, coordinator.config_entry.entry_id)},
             "name": coordinator.name,
         }
 
     @property
-    def native_value(self):
+    def native_value(self) -> Any:
         """Return the state of the sensor."""
-        if self.entity_description.key == SENSOR_COLLECTION_TYPE:
-            return self.coordinator.data.get("collection_count")
-        elif self.entity_description.key == SENSOR_WANTLIST_TYPE:
-            return self.coordinator.data.get("wantlist_count")
-        elif self.entity_description.key == SENSOR_RANDOM_RECORD_TYPE:
-            return self.coordinator.data.get("random_record", {}).get("title")
-        elif self.entity_description.key == SENSOR_COLLECTION_VALUE_MIN_TYPE:
-            return self.coordinator.data.get("collection_value", {}).get("min")
-        elif self.entity_description.key == SENSOR_COLLECTION_VALUE_MEDIAN_TYPE:
-            return self.coordinator.data.get("collection_value", {}).get("median")
-        elif self.entity_description.key == SENSOR_COLLECTION_VALUE_MAX_TYPE:
-            return self.coordinator.data.get("collection_value", {}).get("max")
+        data = self.coordinator.data
+        
+        if self._sensor_key == "collection":
+            return data.get("collection_count")
+        elif self._sensor_key == "wantlist":
+            return data.get("wantlist_count")
+        elif self._sensor_key == "random_record":
+            return data.get("random_record", {}).get("title")
+        elif self._sensor_key == "value_min":
+            return data.get("collection_value", {}).get("min")
+        elif self._sensor_key == "value_median":
+            return data.get("collection_value", {}).get("median")
+        elif self._sensor_key == "value_max":
+            return data.get("collection_value", {}).get("max")
+        
         return None
 
     @property
-    def native_unit_of_measurement(self):
-        """Return the unit of measurement for the sensor."""
-        if self.entity_description.key in [
-            SENSOR_COLLECTION_VALUE_MIN_TYPE,
-            SENSOR_COLLECTION_VALUE_MEDIAN_TYPE,
-            SENSOR_COLLECTION_VALUE_MAX_TYPE,
-        ]:
-            return self.coordinator.data.get("currency_symbol")
-        return self.entity_description.native_unit_of_measurement
+    def native_unit_of_measurement(self) -> Optional[str]:
+        """Return the unit of measurement."""
+        if self._sensor_key.startswith("value_"):
+            return self.coordinator.data.get("collection_value", {}).get("currency", "$")
+        return self._attr_native_unit_of_measurement
 
     @property
-    def extra_state_attributes(self):
+    def extra_state_attributes(self) -> Dict[str, Any]:
         """Return the state attributes."""
         attrs = {"user": self.coordinator.data.get("user")}
         
-        if self.entity_description.key == SENSOR_RANDOM_RECORD_TYPE:
-            if random_record_data := self.coordinator.data.get("random_record", {}).get("data"):
-                attrs.update(random_record_data)
-                
-        # Include last updated timestamp for relevant endpoints
-        if self.entity_description.key == SENSOR_COLLECTION_TYPE:
-            last_updated = self.coordinator.data.get("_last_updated", {}).get("collection")
-            if last_updated:
-                # Convert timestamp to readable format
-                last_updated_str = datetime.datetime.fromtimestamp(last_updated).strftime('%Y-%m-%d %H:%M:%S')
-                attrs["last_updated"] = last_updated_str
-                
-        elif self.entity_description.key == SENSOR_WANTLIST_TYPE:
-            last_updated = self.coordinator.data.get("_last_updated", {}).get("wantlist")
-            if last_updated:
-                # Convert timestamp to readable format
-                last_updated_str = datetime.datetime.fromtimestamp(last_updated).strftime('%Y-%m-%d %H:%M:%S')
-                attrs["last_updated"] = last_updated_str
-                
-        elif self.entity_description.key == SENSOR_RANDOM_RECORD_TYPE:
-            last_updated = self.coordinator.data.get("_last_updated", {}).get("random_record")
-            if last_updated:
-                # Convert timestamp to readable format
-                last_updated_str = datetime.datetime.fromtimestamp(last_updated).strftime('%Y-%m-%d %H:%M:%S')
-                attrs["last_updated"] = last_updated_str
-                
-        elif self.entity_description.key in [
-            SENSOR_COLLECTION_VALUE_MIN_TYPE,
-            SENSOR_COLLECTION_VALUE_MEDIAN_TYPE,
-            SENSOR_COLLECTION_VALUE_MAX_TYPE
-        ]:
-            last_updated = self.coordinator.data.get("_last_updated", {}).get("collection_value")
-            if last_updated:
-                # Convert timestamp to readable format
-                last_updated_str = datetime.datetime.fromtimestamp(last_updated).strftime('%Y-%m-%d %H:%M:%S')
-                attrs["last_updated"] = last_updated_str
-                
+        # Add specific attributes based on sensor type
+        if self._sensor_key == "random_record":
+            record_data = self.coordinator.data.get("random_record", {}).get("data", {})
+            attrs.update(record_data)
+        
+        # Add last updated timestamp
+        last_updated_key = self._get_last_updated_key()
+        if last_updated_key:
+            timestamp = self.coordinator.data.get("last_updated", {}).get(last_updated_key)
+            if timestamp:
+                attrs["last_updated"] = datetime.datetime.fromtimestamp(timestamp).strftime('%Y-%m-%d %H:%M:%S')
+        
         return attrs
+    
+    def _get_last_updated_key(self) -> Optional[str]:
+        """Get the last updated key for this sensor type."""
+        mapping = {
+            "collection": "collection",
+            "wantlist": "wantlist", 
+            "random_record": "random_record",
+            "value_min": "collection_value",
+            "value_median": "collection_value", 
+            "value_max": "collection_value",
+        }
+        return mapping.get(self._sensor_key)
