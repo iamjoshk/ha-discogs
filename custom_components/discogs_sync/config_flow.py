@@ -82,10 +82,42 @@ class DiscogsOptionsFlowHandler(config_entries.OptionsFlow):
     async def async_step_intervals(self, user_input=None):
         """Second step - configure intervals if updates are enabled."""
         if user_input is not None:
-            # Return completed form with all options
+            # Process the input and preserve existing values if fields are empty/None
             data = {CONF_ENABLE_SCHEDULED_UPDATES: True}
-            data.update(user_input)
+            
+            # For each interval, use the user input if provided, otherwise keep existing value
+            for key, default in [
+                (CONF_COLLECTION_UPDATE_INTERVAL, DEFAULT_COLLECTION_UPDATE_INTERVAL),
+                (CONF_WANTLIST_UPDATE_INTERVAL, DEFAULT_WANTLIST_UPDATE_INTERVAL),
+                (CONF_COLLECTION_VALUE_UPDATE_INTERVAL, DEFAULT_COLLECTION_VALUE_UPDATE_INTERVAL),
+                (CONF_RANDOM_RECORD_UPDATE_INTERVAL, DEFAULT_RANDOM_RECORD_UPDATE_INTERVAL),
+            ]:
+                new_value = user_input.get(key)
+                if new_value is not None and new_value != "":
+                    data[key] = new_value
+                else:
+                    # Keep existing value or use default
+                    data[key] = self._entry_options.get(key, default)
+            
             return self.async_create_entry(title="", data=data)
+
+        # Get current values for display
+        current_collection = self._entry_options.get(CONF_COLLECTION_UPDATE_INTERVAL, DEFAULT_COLLECTION_UPDATE_INTERVAL)
+        current_wantlist = self._entry_options.get(CONF_WANTLIST_UPDATE_INTERVAL, DEFAULT_WANTLIST_UPDATE_INTERVAL)
+        current_value = self._entry_options.get(CONF_COLLECTION_VALUE_UPDATE_INTERVAL, DEFAULT_COLLECTION_VALUE_UPDATE_INTERVAL)
+        current_random = self._entry_options.get(CONF_RANDOM_RECORD_UPDATE_INTERVAL, DEFAULT_RANDOM_RECORD_UPDATE_INTERVAL)
+        
+        # Format current intervals display
+        def format_interval(interval):
+            return "disabled" if interval == 0 else str(interval)
+        
+        current_intervals = (
+            f"Current Update Intervals (in minutes)\n"
+            f"Collection: {format_interval(current_collection)}\n"
+            f"Wantlist: {format_interval(current_wantlist)}\n"
+            f"Collection Value: {format_interval(current_value)}\n"
+            f"Random Record: {format_interval(current_random)}"
+        )
 
         # Show interval configuration with better descriptions
         return self.async_show_form(
@@ -93,42 +125,23 @@ class DiscogsOptionsFlowHandler(config_entries.OptionsFlow):
             data_schema=vol.Schema({
                 vol.Optional(
                     CONF_COLLECTION_UPDATE_INTERVAL,
-                    default=self._entry_options.get(
-                        CONF_COLLECTION_UPDATE_INTERVAL, DEFAULT_COLLECTION_UPDATE_INTERVAL
-                    ),
-                    description={
-                        "suggested_value": "Minutes between collection count updates"
-                    },
-                ): vol.All(vol.Coerce(int), vol.Range(min=1)),
+                    default=current_collection,
+                ): vol.All(vol.Coerce(int), vol.Range(min=0, max=1440)),
                 vol.Optional(
                     CONF_WANTLIST_UPDATE_INTERVAL,
-                    default=self._entry_options.get(
-                        CONF_WANTLIST_UPDATE_INTERVAL, DEFAULT_WANTLIST_UPDATE_INTERVAL
-                    ),
-                    description={
-                        "suggested_value": "Minutes between wantlist count updates"
-                    },
-                ): vol.All(vol.Coerce(int), vol.Range(min=1)),
+                    default=current_wantlist,
+                ): vol.All(vol.Coerce(int), vol.Range(min=0, max=1440)),
                 vol.Optional(
                     CONF_COLLECTION_VALUE_UPDATE_INTERVAL,
-                    default=self._entry_options.get(
-                        CONF_COLLECTION_VALUE_UPDATE_INTERVAL, DEFAULT_COLLECTION_VALUE_UPDATE_INTERVAL
-                    ),
-                    description={
-                        "suggested_value": "Minutes between collection value updates"
-                    },
-                ): vol.All(vol.Coerce(int), vol.Range(min=1)),
+                    default=current_value,
+                ): vol.All(vol.Coerce(int), vol.Range(min=0, max=1440)),
                 vol.Optional(
                     CONF_RANDOM_RECORD_UPDATE_INTERVAL,
-                    default=self._entry_options.get(
-                        CONF_RANDOM_RECORD_UPDATE_INTERVAL, DEFAULT_RANDOM_RECORD_UPDATE_INTERVAL
-                    ),
-                    description={
-                        "suggested_value": "Minutes between random record updates"
-                    },
-                ): vol.All(vol.Coerce(int), vol.Range(min=1)),
+                    default=current_random,
+                ): vol.All(vol.Coerce(int), vol.Range(min=0, max=1440)),
             }),
             description_placeholders={
-                "update_info": "Configure how often each endpoint should update (in minutes)"
+                "update_info": "Set the update interval for each endpoint below. Valid values are in minutes from 0 (disabled) to 1440.",
+                "current_intervals": current_intervals
             },
         )
