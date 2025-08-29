@@ -60,11 +60,11 @@ To get your Discogs API token:
 
 ### Integration Settings
 
-During integration set up, and later using the settings gear in the integration, you can set the update interval for all sensors or choose to disable automatic sensor updates. Whether the automatic updates are enabled or not, you can use the refresh buttons to update the data for each API endpoint. If you disable the automatic updates, then you can use automations to press the refresh buttons and refresh data from each endpoint at any interval you decide.
-
+During integration set up, and later using the settings gear in the integration, you can set the update interval individually for the collection, waitlist, random record, and collection values. These intervals are in minutes. If you disable the automatic updates, then you can use automations to press the refresh buttons and refresh data from each endpoint at any interval you decide. You can also always press the buttons for an on-demand update even with automatic updates enabled.
 ## Available Actions
 
-Note: the data returned even for small collections will exceed the limit (65535 characters) of entity attributes, so the action responses are returned as responses only with an option to download the response as a JSON file.
+Note: the data returned even for small collections will exceed the limit (65535 characters) of entity attributes, so the action responses are returned as responses only with an option to download the response as a JSON file. The responses will NOT be saved to an entity.
+
 
 The response can be used as a variable in a script or automation.
 
@@ -103,7 +103,7 @@ As an action directly:
 ```
 type: custom:flex-table-card
 title: My Discogs Collection
-search: true
+enable_search: true
 action: discogs_sync.download_collection
 entities: []
 sort_by:
@@ -151,7 +151,7 @@ and flex-table-card:
 ```
 type: custom:flex-table-card
 title: My Discogs Collection
-search: true
+enable_search: true
 action: script.discogs_download_collection
 entities: []
 sort_by:
