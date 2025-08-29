@@ -54,17 +54,14 @@ class DiscogsCoordinator(DataUpdateCoordinator):
     
     def _get_update_interval(self, entry: ConfigEntry) -> timedelta:
         """Get update interval from configuration."""
-        # Use shortest configured interval or default to 10 minutes
+        # Use shortest configured interval (excluding disabled ones) or default to 10 minutes
         intervals = []
         
-        if entry.options.get("collection_update_interval"):
-            intervals.append(entry.options["collection_update_interval"])
-        if entry.options.get("wantlist_update_interval"):
-            intervals.append(entry.options["wantlist_update_interval"])
-        if entry.options.get("collection_value_update_interval"):
-            intervals.append(entry.options["collection_value_update_interval"])
-        if entry.options.get("random_record_update_interval"):
-            intervals.append(entry.options["random_record_update_interval"])
+        for option_key in ["collection_update_interval", "wantlist_update_interval", 
+                          "collection_value_update_interval", "random_record_update_interval"]:
+            interval = entry.options.get(option_key)
+            if interval and interval > 0:  # Only include enabled endpoints
+                intervals.append(interval)
         
         min_interval = min(intervals) if intervals else 10
         return timedelta(minutes=max(min_interval, 1))  # At least 1 minute
@@ -72,12 +69,12 @@ class DiscogsCoordinator(DataUpdateCoordinator):
     def update_intervals(self, collection_interval=None, wantlist_interval=None, 
                         collection_value_interval=None, random_record_interval=None):
         """Update the individual endpoint intervals."""
-        # Store intervals for later use in determining when to update each endpoint
+        # Store intervals, allowing 0 to disable endpoints
         self._endpoint_intervals = {
-            "collection": collection_interval or 10,
-            "wantlist": wantlist_interval or 10,
-            "collection_value": collection_value_interval or 30,
-            "random_record": random_record_interval or 240
+            "collection": collection_interval if collection_interval is not None else 10,
+            "wantlist": wantlist_interval if wantlist_interval is not None else 10,
+            "collection_value": collection_value_interval if collection_value_interval is not None else 30,
+            "random_record": random_record_interval if random_record_interval is not None else 240
         }
         
         _LOGGER.debug("Updated endpoint intervals: %s", self._endpoint_intervals)
@@ -95,15 +92,27 @@ class DiscogsCoordinator(DataUpdateCoordinator):
         
         try:
             # Get user identity first (includes basic collection/wantlist counts)
-            identity = await self.hass.async_add_executor_job(self.api_client.get_user_identity)
-            if identity:
-                self._data["user"] = identity["username"]
-                self._data["collection_count"] = identity["collection_count"]
-                self._data["wantlist_count"] = identity["wantlist_count"]
-                self._data["collection_value"]["currency"] = identity["currency"]
+            # Only update if collection or wantlist intervals are enabled
+            collection_enabled = self._endpoint_intervals.get("collection", 10) > 0
+            wantlist_enabled = self._endpoint_intervals.get("wantlist", 10) > 0
+            
+            if collection_enabled or wantlist_enabled:
+                identity = await self.hass.async_add_executor_job(self.api_client.get_user_identity)
+                if identity:
+                    self._data["user"] = identity["username"]
+                    
+                    # Only update specific counts if their intervals are enabled
+                    if collection_enabled:
+                        self._data["collection_count"] = identity["collection_count"]
+                    if wantlist_enabled:
+                        self._data["wantlist_count"] = identity["wantlist_count"]
+                        
+                    self._data["collection_value"]["currency"] = identity["currency"]
+            else:
+                _LOGGER.debug("Collection and wantlist updates disabled (intervals = 0)")
             
             # Update other endpoints if needed
-            username = self._data["user"]
+            username = self._data.get("user")
             if username and username != "Unknown":
                 await self._update_endpoints(username)
             
@@ -119,36 +128,44 @@ class DiscogsCoordinator(DataUpdateCoordinator):
         current_time = time.time()
         
         # Check collection value (less frequent)
-        last_value_update = self._data["last_updated"].get("collection_value", 0)
-        value_interval = self._endpoint_intervals.get("collection_value", 30) * 60  # Convert to seconds
-        
-        if current_time - last_value_update > value_interval:
-            try:
-                value_data = await self.hass.async_add_executor_job(
-                    self.api_client.get_collection_value, username
-                )
-                if value_data:
-                    self._data["collection_value"] = value_data
-                    self._data["last_updated"]["collection_value"] = current_time
-                    _LOGGER.debug("Updated collection value")
-            except Exception as err:
-                _LOGGER.debug("Failed to update collection value: %s", err)
+        value_interval_minutes = self._endpoint_intervals.get("collection_value", 30)
+        if value_interval_minutes > 0:  # Only update if not disabled
+            last_value_update = self._data["last_updated"].get("collection_value", 0)
+            value_interval = value_interval_minutes * 60  # Convert to seconds
+            
+            if current_time - last_value_update > value_interval:
+                try:
+                    value_data = await self.hass.async_add_executor_job(
+                        self.api_client.get_collection_value, username
+                    )
+                    if value_data:
+                        self._data["collection_value"] = value_data
+                        self._data["last_updated"]["collection_value"] = current_time
+                        _LOGGER.debug("Updated collection value")
+                except Exception as err:
+                    _LOGGER.debug("Failed to update collection value: %s", err)
+        else:
+            _LOGGER.debug("Collection value updates disabled (interval = 0)")
         
         # Check random record (even less frequent)
-        last_random_update = self._data["last_updated"].get("random_record", 0)
-        random_interval = self._endpoint_intervals.get("random_record", 240) * 60  # Convert to seconds
-        
-        if current_time - last_random_update > random_interval:
-            try:
-                random_data = await self.hass.async_add_executor_job(
-                    self.api_client.get_random_record, username
-                )
-                if random_data:
-                    self._data["random_record"] = random_data
-                    self._data["last_updated"]["random_record"] = current_time
-                    _LOGGER.debug("Updated random record")
-            except Exception as err:
-                _LOGGER.debug("Failed to update random record: %s", err)
+        random_interval_minutes = self._endpoint_intervals.get("random_record", 240)
+        if random_interval_minutes > 0:  # Only update if not disabled
+            last_random_update = self._data["last_updated"].get("random_record", 0)
+            random_interval = random_interval_minutes * 60  # Convert to seconds
+            
+            if current_time - last_random_update > random_interval:
+                try:
+                    random_data = await self.hass.async_add_executor_job(
+                        self.api_client.get_random_record, username
+                    )
+                    if random_data:
+                        self._data["random_record"] = random_data
+                        self._data["last_updated"]["random_record"] = current_time
+                        _LOGGER.debug("Updated random record")
+                except Exception as err:
+                    _LOGGER.debug("Failed to update random record: %s", err)
+        else:
+            _LOGGER.debug("Random record updates disabled (interval = 0)")
     
     async def manual_refresh_endpoint(self, endpoint: str) -> bool:
         """Manually refresh a specific endpoint."""
