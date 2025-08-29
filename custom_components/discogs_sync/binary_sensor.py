@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import datetime
+import logging
 from homeassistant.components.binary_sensor import (
     BinarySensorEntity,
     BinarySensorDeviceClass,
@@ -12,6 +13,8 @@ from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.config_entries import ConfigEntry
 
 from .const import DOMAIN
+
+_LOGGER = logging.getLogger(__name__)
 
 async def async_setup_entry(
     hass: HomeAssistant, entry: ConfigEntry, async_add_entities: AddEntitiesCallback
@@ -35,23 +38,28 @@ class DiscogsRateLimitSensor(CoordinatorEntity, BinarySensorEntity):
             "identifiers": {(DOMAIN, coordinator.config_entry.entry_id)},
             "name": coordinator.name
         }
+        _LOGGER.debug("Initialized rate limit binary sensor")
 
     @property
     def is_on(self):
         """Return if rate limit is exceeded."""
         # Rate limit is exceeded (problem) when the exceeded flag is True
-        return self.coordinator.rate_limit_data.get("exceeded", False)
+        # Access using the property method from coordinator
+        return self.coordinator.get_rate_limit_data().get("exceeded", False)
 
     @property
     def available(self):
         """Return if entity is available."""
         # Only available if we've received rate limit data
-        return self.coordinator.rate_limit_data.get("last_updated") is not None
+        data = self.coordinator.get_rate_limit_data()
+        is_available = data.get("last_updated") is not None
+        _LOGGER.debug("Rate limit sensor available: %s", is_available)
+        return is_available
 
     @property
     def extra_state_attributes(self):
         """Return rate limit attributes."""
-        data = self.coordinator.rate_limit_data
+        data = self.coordinator.get_rate_limit_data()
         attributes = {
             "total_limit": data.get("total", 60),
             "used": data.get("used", 0),

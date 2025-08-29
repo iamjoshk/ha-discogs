@@ -11,8 +11,17 @@ CONF_ENABLE_SCHEDULED_UPDATES = "enable_scheduled_updates"
 CONF_GLOBAL_UPDATE_INTERVAL = "global_update_interval"
 CONF_STANDARD_UPDATE_INTERVAL = "standard_update_interval"  # Added missing constant
 CONF_RANDOM_RECORD_UPDATE_INTERVAL = "random_record_update_interval"  # Added missing constant
+CONF_COLLECTION_UPDATE_INTERVAL = "collection_update_interval"
+CONF_WANTLIST_UPDATE_INTERVAL = "wantlist_update_interval"
+CONF_COLLECTION_VALUE_UPDATE_INTERVAL = "collection_value_update_interval"
 DEFAULT_GLOBAL_UPDATE_INTERVAL = 10  # in minutes
 DEFAULT_ACTION_DELAY = 10  # in seconds
+
+# Default values (in minutes)
+DEFAULT_COLLECTION_UPDATE_INTERVAL = 10
+DEFAULT_WANTLIST_UPDATE_INTERVAL = 10
+DEFAULT_COLLECTION_VALUE_UPDATE_INTERVAL = 30
+DEFAULT_RANDOM_RECORD_UPDATE_INTERVAL = 240  # 4 hours
 
 # Endpoint types for button entities
 ENDPOINT_COLLECTION = "collection"

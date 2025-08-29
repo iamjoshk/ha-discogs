@@ -2,7 +2,7 @@
   "config": {
     "step": {
       "user": {
-        "title": "Set up Discogs Sync Integration",
+        "title": "Set up Discogs Integration",
         "description": "Enter your Discogs API token and configure update settings.",
         "data": {
           "token": "Discogs API Token",
@@ -24,11 +24,15 @@
   "options": {
     "step": {
       "init": {
-        "title": "Configure Discogs Integration",
-        "description": "Configure update behavior for Discogs sensors.",
+        "title": "Configure Discogs Sync",
+        "description": "Configure how frequently Discogs data is automatically updated. Even when automatic updates are disabled, you can always use the refresh buttons to manually update data.\n\n{update_info}",
         "data": {
           "enable_scheduled_updates": "Enable automatic updates",
-          "global_update_interval": "Update interval (minutes)"
+          "global_update_interval": "Default update interval (minutes)",
+          "collection_update_interval": "Collection update interval (minutes)",
+          "wantlist_update_interval": "Wantlist update interval (minutes)",
+          "collection_value_update_interval": "Collection value update interval (minutes)",
+          "random_record_update_interval": "Random record update interval (minutes)"
         }
       }
     }

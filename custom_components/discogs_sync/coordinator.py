@@ -1,5 +1,7 @@
-"""Data coordinator for Discogs Sync integration."""
+"""Data coordinator for Discogs Sync."""
+import json
 import logging
+import os
 import random
 import re
 import time
@@ -9,13 +11,19 @@ import discogs_client
 import requests
 
 from homeassistant.core import HomeAssistant, callback
+from homeassistant.helpers.storage import Store
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator
 from homeassistant.const import CONF_TOKEN, CONF_NAME
 
 from .const import (
     DOMAIN, DEFAULT_NAME, USER_AGENT,
     CONF_ENABLE_SCHEDULED_UPDATES, CONF_GLOBAL_UPDATE_INTERVAL,
-    DEFAULT_GLOBAL_UPDATE_INTERVAL
+    DEFAULT_GLOBAL_UPDATE_INTERVAL,
+    CONF_COLLECTION_UPDATE_INTERVAL,
+    CONF_WANTLIST_UPDATE_INTERVAL,
+    CONF_COLLECTION_VALUE_UPDATE_INTERVAL,
+    CONF_RANDOM_RECORD_UPDATE_INTERVAL,
+    DEFAULT_RANDOM_RECORD_UPDATE_INTERVAL
 )
 
 _LOGGER = logging.getLogger(__name__)
@@ -25,18 +33,74 @@ class DiscogsCoordinator(DataUpdateCoordinator):
 
     def __init__(self, hass: HomeAssistant, entry):
         """Initialize coordinator."""
-        # Check if scheduled updates are enabled
-        self.enable_scheduled_updates = entry.options.get(
-            CONF_ENABLE_SCHEDULED_UPDATES, 
-            entry.data.get(CONF_ENABLE_SCHEDULED_UPDATES, True)
-        )
+        self._data = {
+            "collection_count": 0,
+            "wantlist_count": 0,
+            "collection_value": {"min": 0, "median": 0, "max": 0},
+            "random_record": {"title": None, "data": {}},
+            "_last_updated": {
+                "collection": None,
+                "wantlist": None, 
+                "collection_value": None,
+                "random_record": None
+            },
+            "user": None,
+            "currency_symbol": "$"  # Default
+        }
         
-        # Global update interval (only used if scheduled updates are enabled)
-        update_interval = timedelta(minutes=entry.options.get(
-            CONF_GLOBAL_UPDATE_INTERVAL, 
-            entry.data.get(CONF_GLOBAL_UPDATE_INTERVAL, DEFAULT_GLOBAL_UPDATE_INTERVAL)
-        )) if self.enable_scheduled_updates else None
-
+        # Store update intervals for each endpoint (in seconds)
+        self._update_intervals = {
+            "collection": entry.options.get(CONF_COLLECTION_UPDATE_INTERVAL, 
+                                        entry.options.get(CONF_GLOBAL_UPDATE_INTERVAL, 
+                                                         DEFAULT_GLOBAL_UPDATE_INTERVAL)) * 60,
+            "wantlist": entry.options.get(CONF_WANTLIST_UPDATE_INTERVAL, 
+                                      entry.options.get(CONF_GLOBAL_UPDATE_INTERVAL, 
+                                                       DEFAULT_GLOBAL_UPDATE_INTERVAL)) * 60,
+            "collection_value": entry.options.get(CONF_COLLECTION_VALUE_UPDATE_INTERVAL, 
+                                             entry.options.get(CONF_GLOBAL_UPDATE_INTERVAL, 
+                                                              DEFAULT_GLOBAL_UPDATE_INTERVAL)) * 60,
+            "random_record": entry.options.get(CONF_RANDOM_RECORD_UPDATE_INTERVAL, 
+                                          DEFAULT_RANDOM_RECORD_UPDATE_INTERVAL) * 60
+        }
+        
+        # Store API client
+        self._token = entry.data[CONF_TOKEN]
+        self._client = discogs_client.Client(USER_AGENT, user_token=self._token)
+        self._display_name = entry.data.get(CONF_NAME, DEFAULT_NAME)
+        
+        # For rate limiting
+        self._rate_limit_data = {
+            "limit": 60,
+            "remaining": 60,
+            "exceeded": False,
+            "last_updated": None
+        }
+        
+        # For scheduled updates
+        self.enable_scheduled_updates = entry.options.get(CONF_ENABLE_SCHEDULED_UPDATES, True)
+        self.global_update_interval = entry.options.get(CONF_GLOBAL_UPDATE_INTERVAL, DEFAULT_GLOBAL_UPDATE_INTERVAL)
+        
+        # Add store for persistence
+        self.store = Store(hass, 1, f"{DOMAIN}_{entry.entry_id}_state")
+        self._stored_data = None
+        
+        # Use the shortest interval for the coordinator's update interval
+        # This ensures we check for needed updates regularly
+        min_interval = min(self._update_intervals.values()) // 60
+        # But don't let it be less than 1 minute to avoid hammering HA
+        min_interval = max(min_interval, 1)
+        
+        update_interval = timedelta(minutes=min_interval)
+        _LOGGER.debug(f"Setting coordinator update_interval to {min_interval} minutes")
+        
+        # Store the next update time for each endpoint
+        self._next_update_time = {}
+        # Initialize next update times - first update should happen immediately
+        for endpoint in self._update_intervals:
+            self._next_update_time[endpoint] = 0
+            
+        # Initialize with standard update interval but we'll handle individual endpoint updates
+        # IMPORTANT: We've removed the name property conflict by just using the name parameter
         super().__init__(
             hass,
             _LOGGER,
@@ -44,78 +108,90 @@ class DiscogsCoordinator(DataUpdateCoordinator):
             update_interval=update_interval,
         )
         
-        self.token = entry.data[CONF_TOKEN]
-        self.name = entry.data.get(CONF_NAME, DEFAULT_NAME)
-        self.config_entry = entry
-        self._client = discogs_client.Client(USER_AGENT, user_token=self.token)
-        self._rate_limit_data = {
-            "total": 60,       # Default for authenticated requests
-            "used": 0,
-            "remaining": 60,
-            "exceeded": False,
-            "last_updated": None
-        }
+    # Instead of the property that conflicts with parent class, provide a getter method
+    def get_display_name(self):
+        """Return coordinator display name."""
+        return self._display_name
         
-        # Store data for each endpoint separately
-        self._data = {
-            "user": "Unknown",
-            "collection_count": 0,
-            "wantlist_count": 0,
-            "collection_value": {
-                "min": 0.0,
-                "median": 0.0,
-                "max": 0.0
-            },
-            "currency_symbol": "$",
-            "random_record": {
-                "title": None,
-                "data": None
-            },
-            # Last updated timestamps for each endpoint
-            "_last_updated": {
-                "collection": None,
-                "wantlist": None,
-                "collection_value": None,
-                "random_record": None
-            }
-        }
-
-    @property
-    def rate_limit_data(self):
-        """Return current rate limit data."""
-        return self._rate_limit_data
-
-    def update_rate_limit_data(self, headers, status_code=None):
-        """Update rate limit data from response headers."""
-        if "X-Discogs-Ratelimit" in headers:
-            self._rate_limit_data["total"] = int(headers["X-Discogs-Ratelimit"])
-        if "X-Discogs-Ratelimit-Used" in headers:
-            self._rate_limit_data["used"] = int(headers["X-Discogs-Ratelimit-Used"])
-        if "X-Discogs-Ratelimit-Remaining" in headers:
-            self._rate_limit_data["remaining"] = int(headers["X-Discogs-Ratelimit-Remaining"])
+    async def async_config_entry_first_refresh(self):
+        """First refresh with state restoration."""
+        # Try to load saved data first
+        self._stored_data = await self.store.async_load() or {}
         
-        self._rate_limit_data["last_updated"] = time.time()
-        
-        # Set exceeded flag if we got a 429 response
-        if status_code == 429:
-            self._rate_limit_data["exceeded"] = True
-            self._rate_limit_data["remaining"] = 0
+        # If we have stored data, use it as initial data
+        if self._stored_data:
+            _LOGGER.debug("Restoring saved state data: %s", self._stored_data)
+            self._data = self._stored_data
+            self.data = self._stored_data
+            
+            # Also restore last updated times if available
+            if "_last_updated" in self._stored_data:
+                for endpoint, last_updated in self._stored_data["_last_updated"].items():
+                    if last_updated is not None:
+                        # Calculate the next update time based on the last update and the interval
+                        interval = self._update_intervals.get(endpoint, 3600)  # Default 1 hour
+                        self._next_update_time[endpoint] = last_updated + interval
+                        _LOGGER.debug(
+                            "Restored last update time for %s: %s, next update at %s", 
+                            endpoint, 
+                            time.ctime(last_updated),
+                            time.ctime(self._next_update_time[endpoint])
+                        )
+        else:
+            _LOGGER.debug("No saved state data found, starting fresh")
+            
+        # Then proceed with normal refresh
+        return await super().async_config_entry_first_refresh()
 
     async def _async_update_data(self):
-        """Fetch data from Discogs."""
+        """Fetch data from Discogs but only update endpoints as needed."""
         if not self.enable_scheduled_updates:
             # If scheduled updates are disabled, just return the current data
+            _LOGGER.debug("Automatic updates are disabled")
             return self._data
             
         try:
-            # Update all endpoints
-            await self.async_update_collection()
-            await self.async_update_wantlist()
-            await self.async_update_collection_value()
-            await self.async_update_random_record()
+            current_time = time.time()
+            update_performed = False
             
-            # Reset rate limit exceeded flag if we successfully fetched all data
-            self._rate_limit_data["exceeded"] = False
+            # Check each endpoint to see if it needs updating
+            for endpoint in ["collection", "wantlist", "collection_value", "random_record"]:
+                # Calculate if it's time for an update
+                next_update = self._next_update_time.get(endpoint, 0)
+                time_until_update = next_update - current_time
+                
+                if time_until_update <= 0:
+                    _LOGGER.debug(
+                        f"Updating {endpoint} endpoint - update is due (next: {time.ctime(next_update)})"
+                    )
+                    
+                    if endpoint == "collection":
+                        success = await self.async_update_collection()
+                    elif endpoint == "wantlist":
+                        success = await self.async_update_wantlist()
+                    elif endpoint == "collection_value":
+                        success = await self.async_update_collection_value()
+                    elif endpoint == "random_record":
+                        success = await self.async_update_random_record()
+                    else:
+                        success = False
+                    
+                    if success:
+                        # Calculate next update time based on interval
+                        interval = self._update_intervals.get(endpoint, 3600)  # Default 1 hour
+                        self._next_update_time[endpoint] = current_time + interval
+                        _LOGGER.debug(
+                            f"Next update for {endpoint} scheduled at {time.ctime(self._next_update_time[endpoint])}"
+                        )
+                        update_performed = True
+                else:
+                    _LOGGER.debug(
+                        f"Skipping {endpoint} update - next update in {int(time_until_update)} seconds"
+                    )
+            
+            # Reset rate limit exceeded flag if we successfully reached this point
+            if update_performed:
+                self._rate_limit_data["exceeded"] = False
             
         except Exception as err:
             _LOGGER.exception("Error updating Discogs data: %s", err)
@@ -124,16 +200,84 @@ class DiscogsCoordinator(DataUpdateCoordinator):
                 self._rate_limit_data["exceeded"] = True
                 self._rate_limit_data["remaining"] = 0
         
+        # Save current data for persistence
+        await self.store.async_save(self._data)
+        _LOGGER.debug("Saved state data to persistent storage")
+        
         return self._data
     
+    @callback
+    def async_update_config(self, enable_scheduled_updates=None, global_update_interval=None, 
+                        collection_interval=None, wantlist_interval=None, 
+                        collection_value_interval=None, random_record_interval=None):
+        """Update coordinator configuration."""
+        _LOGGER.debug(
+            "Updating coordinator config: enable=%s, collection=%s, wantlist=%s, value=%s, random=%s",
+            enable_scheduled_updates,
+            collection_interval,
+            wantlist_interval,
+            collection_value_interval,
+            random_record_interval
+        )
+        
+        if enable_scheduled_updates is not None:
+            self.enable_scheduled_updates = enable_scheduled_updates
+            _LOGGER.debug("Set enable_scheduled_updates to %s", enable_scheduled_updates)
+        
+        config_updated = False
+            
+        if global_update_interval is not None:
+            self.global_update_interval = global_update_interval
+            config_updated = True
+            _LOGGER.debug("Set global_update_interval to %s minutes", global_update_interval)
+        
+        # Update individual intervals if provided (and enable_scheduled_updates is True)
+        if enable_scheduled_updates is not False:
+            if collection_interval is not None:
+                self._update_intervals["collection"] = collection_interval * 60
+                config_updated = True
+                _LOGGER.debug("Set collection update interval to %s minutes (%s seconds)", 
+                            collection_interval, collection_interval * 60)
+            
+            if wantlist_interval is not None:
+                self._update_intervals["wantlist"] = wantlist_interval * 60
+                config_updated = True
+                _LOGGER.debug("Set wantlist update interval to %s minutes (%s seconds)", 
+                            wantlist_interval, wantlist_interval * 60)
+            
+            if collection_value_interval is not None:
+                self._update_intervals["collection_value"] = collection_value_interval * 60
+                config_updated = True
+                _LOGGER.debug("Set collection value update interval to %s minutes (%s seconds)", 
+                            collection_value_interval, collection_value_interval * 60)
+            
+            if random_record_interval is not None:
+                self._update_intervals["random_record"] = random_record_interval * 60
+                config_updated = True
+                _LOGGER.debug("Set random record update interval to %s minutes (%s seconds)", 
+                            random_record_interval, random_record_interval * 60)
+                
+            # If any intervals were updated, update the update_interval for the coordinator
+            if config_updated:
+                # Use the shortest interval for the coordinator's update interval
+                min_interval = min(self._update_intervals.values()) // 60
+                # But don't let it be less than 1 minute to avoid hammering HA
+                min_interval = max(min_interval, 1)
+                self.update_interval = timedelta(minutes=min_interval)
+                _LOGGER.debug(f"Updated coordinator update_interval to {min_interval} minutes")
+                
+            # Reset next update times so they'll be checked on the next coordinator update
+            current_time = time.time()
+            for endpoint in self._update_intervals:
+                self._next_update_time[endpoint] = current_time
+                _LOGGER.debug(f"Reset next update time for {endpoint} to now")
+
     async def async_update_collection(self):
         """Update collection data."""
         try:
-            # Use async_add_executor_job for ALL API calls
-            identity_data = await self.hass.async_add_executor_job(self._fetch_identity_data)
-            if identity_data:
-                self._data["user"] = identity_data.get("username")
-                self._data["collection_count"] = identity_data.get("collection_count")
+            result = await self.hass.async_add_executor_job(self._fetch_collection)
+            if result is not None:
+                self._data["collection_count"] = result
                 self._data["_last_updated"]["collection"] = time.time()
                 return True
         except Exception as err:
@@ -143,11 +287,9 @@ class DiscogsCoordinator(DataUpdateCoordinator):
     async def async_update_wantlist(self):
         """Update wantlist data."""
         try:
-            # Use async_add_executor_job for ALL API calls
-            identity_data = await self.hass.async_add_executor_job(self._fetch_identity_data)
-            if identity_data:
-                self._data["user"] = identity_data.get("username")
-                self._data["wantlist_count"] = identity_data.get("wantlist_count")
+            result = await self.hass.async_add_executor_job(self._fetch_wantlist)
+            if result is not None:
+                self._data["wantlist_count"] = result
                 self._data["_last_updated"]["wantlist"] = time.time()
                 return True
         except Exception as err:
@@ -157,15 +299,19 @@ class DiscogsCoordinator(DataUpdateCoordinator):
     async def async_update_collection_value(self):
         """Update collection value data."""
         try:
+            _LOGGER.debug("Starting collection value update")
             result = await self.hass.async_add_executor_job(self._fetch_collection_value)
             if result:
-                self._data["collection_value"] = result["collection_value"]
-                self._data["currency_symbol"] = result["currency_symbol"]
+                self._data["collection_value"] = result
                 self._data["_last_updated"]["collection_value"] = time.time()
+                _LOGGER.debug("Collection value updated successfully")
                 return True
+            else:
+                _LOGGER.warning("Collection value update returned no data")
+                return False
         except Exception as err:
             _LOGGER.error("Failed to update collection value: %s", err)
-        return False
+            return False
     
     async def async_update_random_record(self):
         """Update random record data."""
@@ -215,72 +361,145 @@ class DiscogsCoordinator(DataUpdateCoordinator):
             _LOGGER.error("Failed to fetch identity: %s", err)
             return None
             
-    def _fetch_collection_value(self):
-        """Fetch the collection value."""
-        # Get the username without making multiple API calls
-        username = self._data.get("user")
-        if username == "Unknown":
-            identity_data = self._fetch_identity_data()
-            if identity_data:
-                username = identity_data.get("username")
-            else:
-                return None
-            
+    def _fetch_collection(self):
+        """Fetch collection data from Discogs."""
         # Implement rate limiting
         self._apply_rate_limiting()
         
         try:
+            me = self._client.identity()
+            user = me.username
+            collection = self._client.user(user).collection_folders[0]
+            result = collection.count
+            
+            # Store username for later use
+            self._data["user"] = user
+            
+            # Update rate limit data from any headers available
+            if hasattr(self._client, '_fetcher') and hasattr(self._client._fetcher, 'headers_returned'):
+                self._handle_rate_limit_headers(self._client._fetcher.headers_returned)
+            
+            return result
+        except Exception as err:
+            # Check if it's a rate limit error
+            if "429" in str(err) or "Too Many Requests" in str(err):
+                self._rate_limit_data["exceeded"] = True
+                self._rate_limit_data["remaining"] = 0
+            _LOGGER.error("Error fetching collection: %s", err)
+            raise
+
+    def _fetch_wantlist(self):
+        """Fetch wantlist data from Discogs."""
+        # Implement rate limiting
+        self._apply_rate_limiting()
+        
+        try:
+            me = self._client.identity()
+            user = me.username
+            wantlist = self._client.user(user).wantlist
+            result = len(wantlist)
+            
+            # Store username for later use if not already set
+            if not self._data.get("user"):
+                self._data["user"] = user
+                
+            # Update rate limit data from any headers available
+            if hasattr(self._client, '_fetcher') and hasattr(self._client._fetcher, 'headers_returned'):
+                self._handle_rate_limit_headers(self._client._fetcher.headers_returned)
+                
+            return result
+        except Exception as err:
+            # Check if it's a rate limit error
+            if "429" in str(err) or "Too Many Requests" in str(err):
+                self._rate_limit_data["exceeded"] = True
+                self._rate_limit_data["remaining"] = 0
+            _LOGGER.error("Error fetching wantlist: %s", err)
+            raise
+    
+    def _fetch_collection_value(self):
+        """Fetch collection value data."""
+        # Implement rate limiting
+        self._apply_rate_limiting()
+        
+        try:
+            # Ensure we have a client instance
+            if not hasattr(self, '_client'):
+                self._client = discogs_client.Client(USER_AGENT, user_token=self._token)
+                
+            # Use cached username if available
+            user = self._data.get("user")
+            if not user:
+                me = self._client.identity()
+                user = me.username
+                self._data["user"] = user
+            
+            # Build URL and headers for direct API call
+            collection_url = f"https://api.discogs.com/users/{user}/collection/value"
             headers = {
                 "User-Agent": USER_AGENT,
-                "Authorization": f"Discogs token={self.token}"
-            }
-            url = f"https://api.discogs.com/users/{username}/collection/value"
-            
-            response = requests.get(url, headers=headers, timeout=10)
-            
-            # Update rate limit info
-            self.update_rate_limit_data(response.headers, response.status_code)
-            
-            if response.status_code == 429:
-                _LOGGER.warning("Rate limit exceeded while fetching collection value")
-                return None
-                
-            response.raise_for_status()
-            value_data = response.json()
-            
-            collection_value = {
-                "min": 0.0,
-                "median": 0.0,
-                "max": 0.0
+                "Authorization": f"Discogs token={self._token}"
             }
             
-            # Clean and convert values
-            value_map = {
-                "minimum": "min",
-                "median": "median", 
-                "maximum": "max"
+            # Make request through the executor
+            response = requests.get(collection_url, headers=headers)
+            response.raise_for_status()  # Raise exception for HTTP errors
+            
+            # Update rate limit data
+            self._handle_rate_limit_headers(response.headers)
+            
+            # Parse response JSON
+            data = response.json()
+            
+            # Extract values and currency symbol
+            min_value = data.get("minimum", "0.00")
+            median_value = data.get("median", "0.00")
+            max_value = data.get("maximum", "0.00")
+            currency = data.get("currency", "$")
+            
+            # Store currency symbol
+            self._data["currency_symbol"] = currency
+            
+            # Convert to numeric values - strip currency symbols first
+            # Use a helper function to safely convert currency strings to float
+            result = {
+                "min": self._currency_to_float(min_value),
+                "median": self._currency_to_float(median_value),
+                "max": self._currency_to_float(max_value),
+                "currency": currency
             }
             
-            for api_key, data_key in value_map.items():
-                value_str = value_data.get(api_key, "0.00")
-                if isinstance(value_str, str):
-                    numeric_value_str = re.sub(r'[^\d.]', '', value_str.replace(',', ''))
-                    try:
-                        collection_value[data_key] = float(numeric_value_str)
-                    except ValueError:
-                        collection_value[data_key] = 0.0
-                else:
-                    collection_value[data_key] = 0.0
-            
-            return {
-                "collection_value": collection_value,
-                "currency_symbol": self._data["currency_symbol"]
-            }
-            
+            return result
         except Exception as err:
-            _LOGGER.error("Failed to fetch collection value: %s", err)
-            return None
-    
+            _LOGGER.error("Error fetching collection value: %s", err)
+            # Check if it's a rate limit error
+            if isinstance(err, requests.exceptions.HTTPError) and err.response.status_code == 429:
+                self._rate_limit_data["exceeded"] = True
+                self._rate_limit_data["remaining"] = 0
+            raise
+
+    def _currency_to_float(self, value):
+        """Convert currency string to float by removing non-numeric characters except decimal point."""
+        if not value:
+            return 0.0
+            
+        # If value is already a number, just return it
+        if isinstance(value, (int, float)):
+            return float(value)
+        
+        # Convert to string if somehow not already a string
+        if not isinstance(value, str):
+            value = str(value)
+        
+        # Remove currency symbols and other non-numeric characters
+        # Keep only digits, decimal point, and negative sign
+        numeric_chars = ''.join(c for c in value if c.isdigit() or c == '.' or c == '-')
+        
+        try:
+            return float(numeric_chars) if numeric_chars else 0.0
+        except ValueError:
+            _LOGGER.warning("Could not convert '%s' to float, using 0.0 instead", value)
+            return 0.0
+        
     def _fetch_random_record(self):
         """Fetch a random record."""
         # Implement rate limiting
@@ -302,7 +521,7 @@ class DiscogsCoordinator(DataUpdateCoordinator):
             # Use direct API call instead of the client library
             headers = {
                 "User-Agent": USER_AGENT,
-                "Authorization": f"Discogs token={self.token}"
+                "Authorization": f"Discogs token={self._token}"
             }
             url = f"https://api.discogs.com/users/{username}/collection/folders/{folder_id}/releases"
             params = {"page": 1, "per_page": 1}  # Just to get count
@@ -384,19 +603,52 @@ class DiscogsCoordinator(DataUpdateCoordinator):
             return format_name
         return None
         
-    @callback
-    def async_update_config(self, enable_scheduled_updates=None, global_update_interval=None):
-        """Update the coordinator configuration."""
-        if enable_scheduled_updates is not None:
-            self.enable_scheduled_updates = enable_scheduled_updates
-            
-        if global_update_interval is not None and self.enable_scheduled_updates:
-            self.update_interval = timedelta(minutes=global_update_interval)
-        elif not self.enable_scheduled_updates:
-            self.update_interval = None
-            
-        _LOGGER.debug(
-            "Updated coordinator config: scheduled updates=%s, interval=%s",
-            self.enable_scheduled_updates,
-            self.update_interval
-        )
+    def get_rate_limit_data(self):
+        """Provide access to rate limit data for the binary sensor."""
+        # Ensure we have a last_updated field
+        if self._rate_limit_data.get("last_updated") is None:
+            self._rate_limit_data["last_updated"] = time.time() 
+    
+        return self._rate_limit_data
+    
+    def _handle_rate_limit_headers(self, headers):
+        """Process rate limit headers from a response."""
+        try:
+            if headers:
+                self._rate_limit_data["total"] = int(headers.get("X-Discogs-Ratelimit", "60"))
+                self._rate_limit_data["used"] = int(headers.get("X-Discogs-Ratelimit-Used", "0"))
+                self._rate_limit_data["remaining"] = int(headers.get("X-Discogs-Ratelimit-Remaining", "60"))
+                self._rate_limit_data["last_updated"] = time.time()
+                
+                # Log rate limit status
+                _LOGGER.debug(
+                    "Discogs rate limit: %s/%s used, %s remaining", 
+                    self._rate_limit_data["used"], 
+                    self._rate_limit_data["total"], 
+                    self._rate_limit_data["remaining"]
+                )
+        except (ValueError, TypeError, KeyError) as err:
+            _LOGGER.warning("Failed to parse rate limit headers: %s", err)
+
+    def update_rate_limit_data(self, headers, status_code=None):
+        """Update rate limit data from response headers."""
+        try:
+            if headers:
+                self._rate_limit_data["total"] = int(headers.get("X-Discogs-Ratelimit", "60"))
+                self._rate_limit_data["used"] = int(headers.get("X-Discogs-Ratelimit-Used", "0"))
+                self._rate_limit_data["remaining"] = int(headers.get("X-Discogs-Ratelimit-Remaining", "60"))
+                self._rate_limit_data["last_updated"] = time.time()
+                
+                # Set exceeded flag if status code is 429
+                if status_code == 429:
+                    self._rate_limit_data["exceeded"] = True
+                    
+                # Log rate limit status
+                _LOGGER.debug(
+                    "Discogs rate limit: %s/%s used, %s remaining", 
+                    self._rate_limit_data["used"], 
+                    self._rate_limit_data["total"], 
+                    self._rate_limit_data["remaining"]
+                )
+        except (ValueError, TypeError, KeyError) as err:
+            _LOGGER.warning("Failed to parse rate limit headers: %s", err)
