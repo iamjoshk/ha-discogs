@@ -13,7 +13,7 @@ This integration brings your full Discogs collection into Home Assistant, expand
 - Random record sensor with details and artwork
 - Buttons to refresh each data for each API endpoint.
 - Rate limit monitor
-- Action that returns collection data for use in dashboards
+- Actions that return collection and wantlist data for use in dashboards
 - Support for flex-table-card integration
 
 ## Installation
