@@ -66,7 +66,7 @@ class DiscogsCoordinator(DataUpdateCoordinator):
         # Store API client
         self._token = entry.data[CONF_TOKEN]
         self._client = discogs_client.Client(USER_AGENT, user_token=self._token)
-        self._name = entry.data.get(CONF_NAME, DEFAULT_NAME)
+        self._display_name = entry.data.get(CONF_NAME, DEFAULT_NAME)
         
         # For rate limiting
         self._rate_limit_data = {
@@ -93,6 +93,12 @@ class DiscogsCoordinator(DataUpdateCoordinator):
         update_interval = timedelta(minutes=min_interval)
         _LOGGER.debug(f"Setting coordinator update_interval to {min_interval} minutes")
         
+        # Store the next update time for each endpoint
+        self._next_update_time = {}
+        # Initialize next update times - first update should happen immediately
+        for endpoint in self._update_intervals:
+            self._next_update_time[endpoint] = 0
+            
         # Initialize with standard update interval but we'll handle individual endpoint updates
         super().__init__(
             hass,
@@ -100,17 +106,11 @@ class DiscogsCoordinator(DataUpdateCoordinator):
             name=DOMAIN,
             update_interval=update_interval,
         )
-        
-        # Store the next update time for each endpoint
-        self._next_update_time = {}
-        # Initialize next update times - first update should happen immediately
-        for endpoint in self._update_intervals:
-            self._next_update_time[endpoint] = 0
 
     @property
     def name(self):
-        """Return coordinator name."""
-        return self._name
+        """Return coordinator display name."""
+        return self._display_name
         
     async def async_config_entry_first_refresh(self):
         """First refresh with state restoration."""
