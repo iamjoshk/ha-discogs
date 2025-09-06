@@ -65,6 +65,15 @@ To get your Discogs API token:
 ### Integration Settings
 
 During integration set up, and later using the settings gear in the integration, you can set the update interval individually for the collection, waitlist, random record, and collection values. These intervals are in minutes. If you disable the automatic updates, then you can use automations to press the refresh buttons and refresh data from each endpoint at any interval you decide. You can also always press the buttons for an on-demand update even with automatic updates enabled.
+
+## Sensors Created
+
++ Collection sensor: A sensor that counts the number of releases in your collection folder.
++ Collection Value sensors: 3 sensors that report the minimum, median, and maximum value of your collection based on Discogs sales.
++ Wantlist sensor: A sensor that counts the number of releases in your wantlist.
++ Rate Limit binary sensor: Turns on if the Discogs API rate limit has been hit. Attributes include the number of calls in the last minute.
++ Refresh buttons: Individual buttons to manually refresh your collection, collection value, and wantlist sensors.
+
 ## Available Actions
 
 Note: the data returned even for small collections will exceed the limit (65535 characters) of entity attributes, so the action responses are returned as responses only with an option to download the response as a JSON file. The responses will NOT be saved to an entity.
@@ -365,7 +374,7 @@ wantlist:
 
 The `download_collection` and `download_wantlist` actions can be used to populate a [flex-table-card](https://github.com/custom-cards/flex-table-card) to display your entire collection or wantlist. First, install the flex-table-card from HACS.
 
-You can run the action directly in the card OR as a script in the card. Note the empty `entities`. This is required.
+You can run the action directly in the card OR as a script in the card. Using the action directly, you need `entities` to be empty. The advantage to using a script is auto-refreshing the card data.
 
 ### Example flex-table-card Configuration
 
@@ -402,19 +411,20 @@ columns:
 
 As a script:
 
+Using `entity_id` in the variable lets the entity from flex-table-card be used for the script. This is an important part of the auto-refresh.
+
 Script:
 ```
 sequence:
-  - action: discogs_sync.download_wantlist
-    data: {}
+  - data: {}
     response_variable: discogs
+    action: discogs_sync.download_collection
   - variables:
-      wantlist: |
-        {{ discogs }}
-  - stop: all done
-    response_variable: discogs
-alias: Discogs Download Wantlist
-description: ""
+      records: |
+        {% set response = { entity_id[0]: discogs } %} {{ response }}
+  - stop: All done
+    response_variable: records
+alias: Discogs Download Collection
 ```
 
 and flex-table-card:
@@ -423,8 +433,9 @@ type: custom:flex-table-card
 title: My Discogs Collection
 enable_search: true
 action: script.discogs_download_collection
-entities: []
-sort_by:
+entities:
+  - sensor.my_collection  <-- whatever sensor you use here will be passed to the script in the entity_id.
+sort_by:                      When this sensor is updated, the data will refresh.
   - Artists
   - Year
 columns:
@@ -444,8 +455,19 @@ columns:
     modify: "x && x.length > 0 ? x[0].name : \"\""
   - name: Genre
     data: collection.genres
+    modify: if(x.length == 0){""}else{x}
   - name: Styles
     data: collection.styles
+    modify: if(x.length == 0){""}else{x}
+grid_options:
+  columns: full
+  rows: auto
+card_mod:
+  style: |
+    ha-card {
+      overflow: auto;
+      max-height: 700px;
+    }
 ```
 
 
